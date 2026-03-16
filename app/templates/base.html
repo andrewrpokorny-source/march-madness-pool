@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }} | March Madness Pool 2026</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        madness: {
+                            orange: '#FF6B00',
+                            blue: '#003DA5',
+                            dark: '#1a1a2e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+        .owner-color-0 { --owner-color: #ef4444; }
+        .owner-color-1 { --owner-color: #3b82f6; }
+        .owner-color-2 { --owner-color: #10b981; }
+        .owner-color-3 { --owner-color: #f59e0b; }
+        .owner-color-4 { --owner-color: #8b5cf6; }
+        .owner-color-5 { --owner-color: #ec4899; }
+        .owner-color-6 { --owner-color: #06b6d4; }
+        .owner-color-7 { --owner-color: #84cc16; }
+        .owner-badge {
+            background-color: var(--owner-color);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <nav class="bg-madness-dark text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex items-center justify-between h-16">
+                <a href="/" class="text-xl font-bold tracking-tight">
+                    <span class="text-madness-orange">March Madness</span> Pool 2026
+                </a>
+                <div class="flex space-x-6 text-sm">
+                    <a href="/" class="hover:text-madness-orange transition">Leaderboard</a>
+                    <a href="/games" class="hover:text-madness-orange transition">Games</a>
+                    <a href="/teams" class="hover:text-madness-orange transition">Teams</a>
+                    <a href="/admin" class="hover:text-madness-orange transition">Admin</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="text-center text-gray-400 text-xs py-6">
+        Pokorny Family March Madness Pool 2026
+    </footer>
+</body>
+</html>

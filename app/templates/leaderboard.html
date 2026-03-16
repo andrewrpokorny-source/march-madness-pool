@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">Leaderboard</h1>
+    <p class="text-gray-500">Family bracket pool standings</p>
+</div>
+
+<!-- Prize Legend -->
+<div class="bg-white rounded-lg shadow-sm p-4 mb-6">
+    <div class="flex flex-wrap gap-4 text-sm text-gray-600">
+        <span class="font-semibold text-gray-800">Payouts:</span>
+        <span>R64: <strong>$1</strong></span>
+        <span>R32: <strong>$2</strong></span>
+        <span>Sweet 16: <strong>$5</strong></span>
+        <span>Elite 8: <strong>$10</strong></span>
+        <span>Final Four: <strong>$20</strong></span>
+        <span>Championship: <strong>$50</strong></span>
+    </div>
+</div>
+
+<!-- Leaderboard Cards -->
+<div class="grid gap-4">
+    {% for entry in leaderboard %}
+    <a href="/owner/{{ entry.owner.id }}" class="block">
+        <div class="bg-white rounded-lg shadow-sm hover:shadow-md transition p-6 owner-color-{{ loop.index0 % 8 }}">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <div class="text-3xl font-bold text-gray-300 w-10">{{ loop.index }}</div>
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-900">{{ entry.owner.name }}</h2>
+                        <div class="text-sm text-gray-500 mt-1">
+                            {{ entry.active_teams }} of {{ entry.total_teams }} teams alive
+                        </div>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="text-3xl font-bold text-green-600">${{ entry.total_winnings }}</div>
+                    <div class="text-sm text-gray-500">{{ entry.total_wins }} win{{ 's' if entry.total_wins != 1 }}</div>
+                </div>
+            </div>
+
+            <!-- Round breakdown -->
+            {% if entry.total_wins > 0 %}
+            <div class="mt-4 pt-4 border-t border-gray-100">
+                <div class="flex flex-wrap gap-3 text-xs">
+                    {% for round_name, wins in entry.wins_by_round.items() %}
+                    {% if wins > 0 %}
+                    <span class="bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                        {{ round_name }}: {{ wins }}W
+                    </span>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+{% if not leaderboard %}
+<div class="text-center py-16 text-gray-400">
+    <p class="text-lg">No data yet. Sync scores from the Admin panel to get started.</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">Admin Panel</h1>
+</div>
+
+<div class="bg-white rounded-lg shadow-sm p-6 max-w-lg">
+    <h2 class="text-lg font-bold text-gray-900 mb-4">Sync Scores</h2>
+    <p class="text-gray-500 text-sm mb-4">
+        Pull latest game results from ESPN. Scores also auto-sync every 5 minutes during the tournament.
+    </p>
+    <button id="sync-btn"
+            onclick="syncScores()"
+            class="bg-madness-blue text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition font-medium">
+        Sync Now
+    </button>
+    <div id="sync-result" class="mt-4 text-sm hidden"></div>
+</div>
+
+<script>
+async function syncScores() {
+    const btn = document.getElementById('sync-btn');
+    const result = document.getElementById('sync-result');
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+    btn.classList.add('opacity-50');
+
+    try {
+        const resp = await fetch('/admin/sync', { method: 'POST' });
+        const data = await resp.json();
+        result.classList.remove('hidden');
+        result.innerHTML = `
+            <div class="bg-green-50 text-green-800 p-3 rounded">
+                <strong>Sync complete!</strong><br>
+                Games created: ${data.games_created}<br>
+                Games updated: ${data.games_updated}<br>
+                ${data.errors.length > 0 ? `Errors: ${data.errors.join(', ')}` : 'No errors'}
+            </div>
+        `;
+    } catch (e) {
+        result.classList.remove('hidden');
+        result.innerHTML = `<div class="bg-red-50 text-red-800 p-3 rounded">Error: ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sync Now';
+        btn.classList.remove('opacity-50');
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">All Teams</h1>
+    <p class="text-gray-500">64 teams, 8 owners</p>
+</div>
+
+<div class="bg-white rounded-lg shadow-sm overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+            <tr>
+                <th class="px-4 py-3 text-left">Seed</th>
+                <th class="px-4 py-3 text-left">Team</th>
+                <th class="px-4 py-3 text-left">Owner</th>
+                <th class="px-4 py-3 text-center">Status</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for team in teams %}
+            <tr class="{{ 'opacity-50' if team.eliminated }}">
+                <td class="px-4 py-3 font-bold text-gray-800">{{ team.seed }}</td>
+                <td class="px-4 py-3">
+                    <div class="flex items-center gap-2">
+                        {% if team.espn_logo_url %}
+                        <img src="{{ team.espn_logo_url }}" class="w-6 h-6 object-contain">
+                        {% endif %}
+                        <span class="font-medium text-gray-900">{{ team.name }}</span>
+                        {% if team.playin_label %}
+                        <span class="text-xs text-gray-400">[{{ team.playin_label }}]</span>
+                        {% endif %}
+                    </div>
+                </td>
+                <td class="px-4 py-3">
+                    <a href="/owner/{{ team.owner.id }}" class="text-madness-blue hover:underline">
+                        {{ team.owner.name }}
+                    </a>
+                </td>
+                <td class="px-4 py-3 text-center">
+                    {% if team.eliminated %}
+                    <span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Out</span>
+                    {% else %}
+                    <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Active</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
