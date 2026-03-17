@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block main_class %}w-full px-3{% endblock %}
+
 {% block content %}
 
 {# Macro must be defined before use #}
@@ -46,38 +48,44 @@
 
     /* Bracket layout */
     .bracket-container {
-        overflow-x: auto;
+        width: 100%;
         padding-bottom: 1rem;
+    }
+    .bracket-wrapper {
+        display: flex;
+        align-items: stretch;
+        width: 100%;
     }
     .region-bracket {
         display: flex;
         align-items: stretch;
-        min-width: 700px;
+        width: 100%;
     }
     .region-bracket.reverse { flex-direction: row-reverse; }
     .round-col {
         display: flex;
         flex-direction: column;
         justify-content: space-around;
-        min-width: 160px;
-        padding: 0 4px;
+        flex: 1;
+        min-width: 0;
+        padding: 0 2px;
     }
     .matchup {
-        margin: 4px 0;
+        margin: 2px 0;
         background: white;
-        border-radius: 6px;
+        border-radius: 4px;
         overflow: hidden;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        box-shadow: 0 1px 2px rgba(0,0,0,0.06);
     }
     .matchup .team-slot {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 6px 10px;
-        font-size: 0.75rem;
+        padding: 3px 6px;
+        font-size: 0.65rem;
         border-bottom: 1px solid #f3f4f6;
-        min-height: 32px;
-        gap: 4px;
+        min-height: 24px;
+        gap: 3px;
         transition: opacity 0.2s;
     }
     .matchup .team-slot:last-child { border-bottom: none; }
@@ -86,12 +94,13 @@
     .team-slot .seed {
         font-weight: 700;
         color: #6b7280;
-        min-width: 18px;
+        min-width: 14px;
         text-align: center;
+        font-size: 0.6rem;
     }
     .team-slot .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .team-slot .score { font-weight: 700; min-width: 24px; text-align: right; }
-    .team-slot .owner-tag { font-size: 0.6rem; font-weight: 600; white-space: nowrap; }
+    .team-slot .score { font-weight: 700; min-width: 18px; text-align: right; }
+    .team-slot .owner-tag { font-size: 0.55rem; font-weight: 600; white-space: nowrap; }
     .team-slot.tbd { color: #d1d5db; font-style: italic; }
 
     /* Owner highlight filter */
@@ -128,9 +137,10 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 1rem;
-        min-width: 180px;
-        padding: 0 12px;
+        gap: 0.5rem;
+        min-width: 140px;
+        max-width: 180px;
+        padding: 0 6px;
     }
     .champion-box {
         background: linear-gradient(135deg, #FF6B00, #003DA5);
@@ -203,9 +213,9 @@
 {% if region_list | length > 0 %}
 <!-- Full bracket with regions -->
 <div class="bracket-container">
-    <div class="flex items-stretch" style="min-width: 1400px;">
+    <div class="bracket-wrapper">
         <!-- LEFT SIDE: first two regions -->
-        <div class="flex-1 flex flex-col gap-6">
+        <div class="flex-1 flex flex-col gap-4">
             {% for region_name in region_list[:2] %}
             <div>
                 <h2 class="text-lg font-bold text-madness-blue mb-2 px-2">{{ region_name }} Region</h2>
@@ -213,7 +223,7 @@
                     {% set region_data = bracket.regions[region_name] %}
                     {% for round_name in ["Round of 64", "Round of 32", "Sweet 16", "Elite 8"] %}
                     <div class="round-col">
-                        <div class="text-center text-xs text-gray-400 font-semibold mb-1">{{ round_name }}</div>
+                        <div class="text-center text-gray-400 font-semibold mb-1" style="font-size: 0.6rem;">{{ round_name }}</div>
                         {% set round_games = region_data.get(round_name, []) if region_data %}
                         {% if round_games %}
                             {% for game in round_games %}
@@ -243,11 +253,11 @@
                 {{ render_matchup(game) }}
                 {% endfor %}
             {% else %}
-                <div class="matchup" style="min-width: 160px;">
+                <div class="matchup" style="min-width: 130px;">
                     <div class="team-slot tbd"><span class="name">TBD</span></div>
                     <div class="team-slot tbd"><span class="name">TBD</span></div>
                 </div>
-                <div class="matchup" style="min-width: 160px;">
+                <div class="matchup" style="min-width: 130px;">
                     <div class="team-slot tbd"><span class="name">TBD</span></div>
                     <div class="team-slot tbd"><span class="name">TBD</span></div>
                 </div>
@@ -257,7 +267,7 @@
             {% if bracket.championship %}
                 {{ render_matchup(bracket.championship) }}
             {% else %}
-                <div class="matchup" style="min-width: 160px;">
+                <div class="matchup" style="min-width: 130px;">
                     <div class="team-slot tbd"><span class="name">TBD</span></div>
                     <div class="team-slot tbd"><span class="name">TBD</span></div>
                 </div>
@@ -273,7 +283,7 @@
         </div>
 
         <!-- RIGHT SIDE: last two regions (reversed) -->
-        <div class="flex-1 flex flex-col gap-6">
+        <div class="flex-1 flex flex-col gap-4">
             {% for region_name in region_list[2:4] %}
             <div>
                 <h2 class="text-lg font-bold text-madness-blue mb-2 px-2 text-right">{{ region_name }} Region</h2>
@@ -281,7 +291,7 @@
                     {% set region_data = bracket.regions[region_name] %}
                     {% for round_name in ["Round of 64", "Round of 32", "Sweet 16", "Elite 8"] %}
                     <div class="round-col">
-                        <div class="text-center text-xs text-gray-400 font-semibold mb-1">{{ round_name }}</div>
+                        <div class="text-center text-gray-400 font-semibold mb-1" style="font-size: 0.6rem;">{{ round_name }}</div>
                         {% set round_games = region_data.get(round_name, []) if region_data %}
                         {% if round_games %}
                             {% for game in round_games %}
@@ -308,9 +318,9 @@
 {% else %}
 <!-- Fallback: round-by-round view when no region data yet -->
 <div class="bracket-container">
-    <div class="flex gap-4" style="min-width: {{ (rounds | length) * 200 }}px;">
+    <div class="flex gap-2 w-full">
         {% for round_name in rounds %}
-        <div class="round-col flex-1" style="min-width: 180px;">
+        <div class="round-col flex-1">
             <div class="text-center text-xs text-gray-400 font-semibold mb-3 uppercase">{{ round_name }}</div>
             {% set round_games = games_by_round.get(round_name, []) %}
             {% if round_games %}
