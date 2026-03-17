@@ -18,79 +18,131 @@ SCOREBOARD_URL = (
 # ESPN uses group 100 for NCAA Tournament
 TOURNAMENT_PARAMS = {"groups": "100", "limit": "100"}
 
-# Map ESPN round names/types to our round names
-ESPN_ROUND_MAP = {
-    1: "First Four",
-    2: "Round of 64",
-    3: "Round of 32",
-    4: "Sweet 16",
-    5: "Elite 8",
-    6: "Final Four",
-    7: "Championship",
+REGIONS = ["South", "East", "West", "Midwest"]
+
+# ESPN headline round phrases -> our round names
+# Checked in order, so more specific matches come first
+ESPN_HEADLINE_ROUND_MAP = [
+    ("first four", "First Four"),
+    ("1st round", "Round of 64"),
+    ("2nd round", "Round of 32"),
+    ("sweet 16", "Sweet 16"),
+    ("elite 8", "Elite 8"),
+    ("elite eight", "Elite 8"),
+    ("final four", "Final Four"),
+    ("national championship", "Championship"),
+    ("championship game", "Championship"),
+    # These must come AFTER more specific matches
+    ("semifinal", "Final Four"),
+]
+
+# Direct mapping from ESPN team display names to our draft names.
+# This avoids fragile normalization logic.
+ESPN_TEAM_MAP = {
+    "Michigan Wolverines": "Michigan",
+    "Kansas Jayhawks": "Kansas",
+    "Tennessee Volunteers": "Tennessee",
+    "Utah State Aggies": "Utah State",
+    "Santa Clara Broncos": "Santa Clara",
+    "South Florida Bulls": "South Florida",
+    "McNeese Cowboys": "McNeese",
+    "Siena Saints": "Siena",
+    "Arizona Wildcats": "Arizona",
+    "Michigan State Spartans": "Michigan State",
+    "Alabama Crimson Tide": "Alabama",
+    "Villanova Wildcats": "Villanova",
+    "VCU Rams": "VCU",
+    "Troy Trojans": "Troy",
+    "Queens University Royals": "Queens",
+    "Furman Paladins": "Furman",
+    "Duke Blue Devils": "Duke",
+    "Gonzaga Bulldogs": "Gonzaga",
+    "Texas Tech Red Raiders": "Texas Tech",
+    "Saint Mary's Gaels": "St. Mary's",
+    "Northern Iowa Panthers": "N Iowa",
+    "Hawai'i Rainbow Warriors": "Hawaii",
+    "Prairie View A&M Panthers": "Prairie View/Lehigh",
+    "Lehigh Mountain Hawks": "Prairie View/Lehigh",
+    "Florida Gators": "Florida",
+    "Illinois Fighting Illini": "Illinois",
+    "Louisville Cardinals": "Louisville",
+    "Iowa Hawkeyes": "Iowa",
+    "Missouri Tigers": "Missouri",
+    "Texas Longhorns": "Texas/NC State",
+    "NC State Wolfpack": "Texas/NC State",
+    "Hofstra Pride": "Hofstra",
+    "Howard Bison": "Howard/UMBC",
+    "UMBC Retrievers": "Howard/UMBC",
+    "Houston Cougars": "Houston",
+    "Nebraska Cornhuskers": "Nebraska",
+    "Vanderbilt Commodores": "Vanderbilt",
+    "UCLA Bruins": "UCLA",
+    "Miami Hurricanes": "Miami/SMU",
+    "SMU Mustangs": "Miami/SMU",
+    "High Point Panthers": "High Point",
+    "Pennsylvania Quakers": "Penn",
+    "Idaho Vandals": "Idaho",
+    "Iowa State Cyclones": "Iowa State",
+    "St. John's Red Storm": "St. John's",
+    "Wisconsin Badgers": "Wisconsin",
+    "Ohio State Buckeyes": "OSU",
+    "Georgia Bulldogs": "Georgia",
+    "Texas A&M Aggies": "Texas A&M",
+    "California Baptist Lancers": "Cal Baptist",
+    "Tennessee State Tigers": "Tennessee State",
+    "UConn Huskies": "UConn",
+    "Purdue Boilermakers": "Purdue",
+    "BYU Cougars": "BYU",
+    "Miami (OH) RedHawks": "Miami",
+    "Clemson Tigers": "Clemson",
+    "Saint Louis Billikens": "St. Louis",
+    "Wright State Raiders": "Wright State",
+    "North Dakota State Bison": "N Dakota State",
+    "Virginia Cavaliers": "Virginia",
+    "Arkansas Razorbacks": "Arkansas",
+    "North Carolina Tar Heels": "UNC",
+    "TCU Horned Frogs": "TCU",
+    "UCF Knights": "UCF",
+    "Akron Zips": "Akron",
+    "Kennesaw State Owls": "Kennesaw State",
+    "Long Island University Sharks": "LIU",
+    "Kentucky Wildcats": "Kentucky",
 }
 
 
-def _normalize_name(name: str) -> str:
-    """Normalize team name for matching."""
-    replacements = {
-        "State": "St",
-        "Saint": "St",
-        "St.": "St",
-        "North Carolina": "UNC",
-        "Brigham Young": "BYU",
-        "Connecticut": "UConn",
-        "Ohio State": "OSU",
-        "Southern California": "USC",
-        "University of California": "Cal",
-        "Northern Iowa": "N Iowa",
-        "North Dakota State": "N Dakota St",
-        "Prairie View A&M": "Prairie View",
-        "Long Island University": "LIU",
-    }
-    normalized = name.strip()
-    for old, new in replacements.items():
-        normalized = normalized.replace(old, new)
-    return normalized.lower().strip()
-
-
 def _match_team(espn_name: str, espn_id: str, teams: list[Team]) -> Team | None:
-    """Try to match an ESPN team to one of our drafted teams."""
+    """Match an ESPN team to one of our drafted teams."""
     # First try by espn_id if already set
     for team in teams:
         if team.espn_id == espn_id:
             return team
 
-    # Then try name matching
-    normalized_espn = _normalize_name(espn_name)
-    for team in teams:
-        # Try exact normalized match
-        if _normalize_name(team.name) == normalized_espn:
-            return team
-        # Try if one contains the other
-        if _normalize_name(team.name) in normalized_espn or normalized_espn in _normalize_name(team.name):
-            return team
-        # For play-in teams, check if either name matches
-        if team.playin_label:
-            for part in team.playin_label.split("/"):
-                if _normalize_name(part.strip()) == normalized_espn:
-                    return team
-                if _normalize_name(part.strip()) in normalized_espn:
-                    return team
+    # Try direct name map
+    draft_name = ESPN_TEAM_MAP.get(espn_name)
+    if draft_name:
+        for team in teams:
+            if team.name == draft_name:
+                return team
+            # Also check play-in label
+            if team.playin_label and team.playin_label == draft_name:
+                return team
 
+    # Fallback: check if ESPN name starts with our team name
+    espn_lower = espn_name.lower()
+    for team in teams:
+        team_lower = team.name.lower()
+        if espn_lower.startswith(team_lower) or team_lower.startswith(espn_lower):
+            return team
+
+    logger.warning(f"Could not match ESPN team: {espn_name} (id={espn_id})")
     return None
 
 
 def _get_tournament_dates() -> list[str]:
-    """Generate date strings covering the full tournament window.
-
-    The NCAA tournament runs roughly 3.5 weeks from Selection Sunday.
-    We query each day individually because ESPN's scoreboard only
-    returns games for the requested date.
-    """
+    """Generate date strings covering the full tournament window."""
     from datetime import date, timedelta
 
     today = date.today()
-    # Start from 2 days ago (catch any games we missed) through 25 days out
     start = today - timedelta(days=5)
     dates = []
     for i in range(30):
@@ -140,32 +192,23 @@ async def fetch_tournament_scores(db: Session) -> dict:
 
 def _determine_round(event: dict) -> str:
     """Determine the tournament round from ESPN event data."""
-    # Check competition type/round info
     competitions = event.get("competitions", [])
     if competitions:
         notes = competitions[0].get("notes", [])
         for note in notes:
             headline = note.get("headline", "").lower()
-            for round_name in ROUND_ORDER:
-                if round_name.lower() in headline:
-                    return round_name
-
-        # Try the tournament round number
-        tournament = competitions[0].get("tournament", {})
-        round_num = tournament.get("round", 0)
-        if round_num in ESPN_ROUND_MAP:
-            return ESPN_ROUND_MAP[round_num]
+            # Check specific round phrases (order matters)
+            for espn_phrase, our_round in ESPN_HEADLINE_ROUND_MAP:
+                if espn_phrase in headline:
+                    return our_round
 
     # Fallback: try event name
     name = event.get("name", "").lower()
-    for round_name in ROUND_ORDER:
-        if round_name.lower() in name:
-            return round_name
+    for espn_phrase, our_round in ESPN_HEADLINE_ROUND_MAP:
+        if espn_phrase in name:
+            return our_round
 
     return "Round of 64"
-
-
-REGIONS = ["South", "East", "West", "Midwest"]
 
 
 def _extract_region(event: dict) -> str | None:
