@@ -18,7 +18,8 @@ SCOREBOARD_URL = (
 # ESPN uses group 100 for NCAA Tournament
 TOURNAMENT_PARAMS = {"groups": "100", "limit": "100"}
 
-REGIONS = ["South", "East", "West", "Midwest"]
+# Midwest must come before West to avoid substring match
+REGIONS = ["South", "East", "Midwest", "West"]
 
 # ESPN headline round phrases -> our round names
 # Checked in order, so more specific matches come first
