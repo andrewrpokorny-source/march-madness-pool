@@ -32,7 +32,8 @@ DRAFT = {
         (7, "Kentucky"),
         (12, "N Iowa"),
         (13, "Hawaii"),
-        (16, "Prairie View/Lehigh"),
+        (16, "Prairie View"),
+        (16, "Lehigh"),
     ],
     "Matthew": [
         (1, "Florida"),
@@ -40,16 +41,19 @@ DRAFT = {
         (6, "Louisville"),
         (9, "Iowa"),
         (10, "Missouri"),
-        (11, "Texas/NC State"),
+        (11, "Texas"),
+        (11, "NC State"),
         (13, "Hofstra"),
-        (16, "Howard/UMBC"),
+        (16, "Howard"),
+        (16, "UMBC"),
     ],
     "Brittany": [
         (2, "Houston"),
         (4, "Nebraska"),
         (5, "Vanderbilt"),
         (7, "UCLA"),
-        (11, "Miami/SMU"),
+        (11, "Miami OH"),
+        (11, "SMU"),
         (12, "High Point"),
         (14, "Penn"),
         (15, "Idaho"),
@@ -86,8 +90,18 @@ DRAFT = {
     ],
 }
 
-# Play-in teams are indicated by "/" in the name
-PLAYIN_TEAMS = {"Prairie View/Lehigh", "Texas/NC State", "Miami/SMU", "Howard/UMBC"}
+# Play-in teams: each member of a pair is stored as a separate team.
+# The playin_label groups them so we know they're from the same draft pick.
+PLAYIN_PAIRS = {
+    "Prairie View": "Prairie View/Lehigh",
+    "Lehigh": "Prairie View/Lehigh",
+    "Texas": "Texas/NC State",
+    "NC State": "Texas/NC State",
+    "Miami OH": "Miami OH/SMU",
+    "SMU": "Miami OH/SMU",
+    "Howard": "Howard/UMBC",
+    "UMBC": "Howard/UMBC",
+}
 
 
 def seed():
@@ -106,13 +120,13 @@ def seed():
         db.flush()
 
         for seed, team_name in teams:
-            is_playin = team_name in PLAYIN_TEAMS
+            playin_label = PLAYIN_PAIRS.get(team_name)
             team = Team(
                 name=team_name,
                 seed=seed,
                 owner_id=owner.id,
-                is_playin=is_playin,
-                playin_label=team_name if is_playin else None,
+                is_playin=playin_label is not None,
+                playin_label=playin_label,
             )
             db.add(team)
 
