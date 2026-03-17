@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.database import engine, Base, SessionLocal
 from app.config import ESPN_POLL_INTERVAL_MINUTES
 from app.services.espn import fetch_tournament_scores
-from app.routers import leaderboard, bracket, admin
+from app.routers import leaderboard, bracket, admin, analytics
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ app = FastAPI(title="March Madness Pool 2026", lifespan=lifespan)
 
 app.include_router(leaderboard.router)
 app.include_router(bracket.router)
+app.include_router(analytics.router)
 app.include_router(admin.router)
 
 
