@@ -164,6 +164,26 @@ def _historical_conditional_prob(seed: int, round_idx: int, prior_probs: list[fl
     return 0.0
 
 
+def _count_effective_teams(teams: list[Team], alive_only: bool = False) -> int:
+    """Count teams treating each play-in pair as one slot.
+
+    A play-in pair (e.g. Howard + UMBC) counts as 1, not 2, since
+    only one team advances to the Round of 64.
+    """
+    seen_playin_labels = set()
+    count = 0
+    for t in teams:
+        if alive_only and t.eliminated:
+            continue
+        if t.playin_label:
+            if t.playin_label not in seen_playin_labels:
+                seen_playin_labels.add(t.playin_label)
+                count += 1
+        else:
+            count += 1
+    return count
+
+
 def get_analytics(db: Session) -> dict:
     """Build comprehensive analytics using Vegas odds."""
     owners = db.query(Owner).all()
@@ -293,8 +313,8 @@ def get_analytics(db: Session) -> dict:
             "actual_winnings": round(actual_winnings, 2),
             "projected_winnings": round(projected_winnings, 2),
             "max_possible": round(max_possible, 2),
-            "active_teams": sum(1 for t in teams if not t.eliminated),
-            "total_teams": len(teams),
+            "active_teams": _count_effective_teams(teams, alive_only=True),
+            "total_teams": _count_effective_teams(teams, alive_only=False),
             "teams": team_details,
         })
 

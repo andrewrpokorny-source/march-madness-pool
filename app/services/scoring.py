@@ -6,6 +6,22 @@ from app.models import Owner, Team, Game
 from app.config import ROUND_PRIZES, ROUND_ORDER
 
 
+def _count_effective_teams(teams, alive_only=False):
+    """Count teams treating each play-in pair as one slot."""
+    seen = set()
+    count = 0
+    for t in teams:
+        if alive_only and t.eliminated:
+            continue
+        if t.playin_label:
+            if t.playin_label not in seen:
+                seen.add(t.playin_label)
+                count += 1
+        else:
+            count += 1
+    return count
+
+
 def get_leaderboard(db: Session) -> list[dict]:
     """Calculate leaderboard with wins and winnings per owner."""
     owners = db.query(Owner).all()
@@ -32,15 +48,13 @@ def get_leaderboard(db: Session) -> list[dict]:
             total_wins += wins
             total_winnings += wins * prize
 
-        active_teams = sum(1 for t in owner.teams if not t.eliminated)
-
         leaderboard.append({
             "owner": owner,
             "total_wins": total_wins,
             "total_winnings": total_winnings,
             "wins_by_round": wins_by_round,
-            "active_teams": active_teams,
-            "total_teams": len(owner.teams),
+            "active_teams": _count_effective_teams(owner.teams, alive_only=True),
+            "total_teams": _count_effective_teams(owner.teams),
         })
 
     leaderboard.sort(key=lambda x: (-x["total_winnings"], -x["total_wins"]))
@@ -78,5 +92,5 @@ def get_owner_detail(db: Session, owner_id: int) -> dict | None:
         "teams": teams_detail,
         "total_wins": total_wins,
         "total_winnings": total_winnings,
-        "active_teams": sum(1 for t in owner.teams if not t.eliminated),
+        "active_teams": _count_effective_teams(owner.teams, alive_only=True),
     }
