@@ -80,32 +80,60 @@ def _match_team(espn_name: str, espn_id: str, teams: list[Team]) -> Team | None:
     return None
 
 
+def _get_tournament_dates() -> list[str]:
+    """Generate date strings covering the full tournament window.
+
+    The NCAA tournament runs roughly 3.5 weeks from Selection Sunday.
+    We query each day individually because ESPN's scoreboard only
+    returns games for the requested date.
+    """
+    from datetime import date, timedelta
+
+    today = date.today()
+    # Start from 2 days ago (catch any games we missed) through 25 days out
+    start = today - timedelta(days=5)
+    dates = []
+    for i in range(30):
+        d = start + timedelta(days=i)
+        dates.append(d.strftime("%Y%m%d"))
+    return dates
+
+
 async def fetch_tournament_scores(db: Session) -> dict:
-    """Fetch latest tournament scores from ESPN and update database."""
+    """Fetch tournament scores from ESPN across all tournament dates."""
     all_teams = db.query(Team).all()
     stats = {"games_updated": 0, "games_created": 0, "errors": []}
 
+    tournament_dates = _get_tournament_dates()
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Fetch current tournament scoreboard
-            resp = await client.get(SCOREBOARD_URL, params=TOURNAMENT_PARAMS)
-            resp.raise_for_status()
-            data = resp.json()
-
-            events = data.get("events", [])
-            logger.info(f"ESPN returned {len(events)} tournament events")
-
-            for event in events:
+            for date_str in tournament_dates:
                 try:
-                    _process_event(event, all_teams, db, stats)
-                except Exception as e:
-                    logger.error(f"Error processing event: {e}")
-                    stats["errors"].append(str(e))
+                    params = {**TOURNAMENT_PARAMS, "dates": date_str}
+                    resp = await client.get(SCOREBOARD_URL, params=params)
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                    events = data.get("events", [])
+                    if events:
+                        logger.info(f"ESPN {date_str}: {len(events)} events")
+
+                    for event in events:
+                        try:
+                            _process_event(event, all_teams, db, stats)
+                        except Exception as e:
+                            logger.error(f"Error processing event: {e}")
+                            stats["errors"].append(str(e))
+
+                except httpx.HTTPError as e:
+                    logger.error(f"ESPN API error for {date_str}: {e}")
+                    stats["errors"].append(f"ESPN {date_str}: {e}")
 
         db.commit()
-    except httpx.HTTPError as e:
-        logger.error(f"ESPN API error: {e}")
-        stats["errors"].append(f"ESPN API error: {e}")
+    except Exception as e:
+        logger.error(f"ESPN sync error: {e}")
+        stats["errors"].append(str(e))
 
     return stats
 
