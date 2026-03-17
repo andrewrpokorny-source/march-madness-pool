@@ -212,6 +212,56 @@ def _determine_round(event: dict) -> str:
     return "Round of 64"
 
 
+def _parse_odds(competition: dict) -> tuple[float | None, float | None, float | None]:
+    """Extract win probabilities and spread from ESPN odds data.
+
+    Converts American moneyline odds to implied probability, then
+    removes the vig by normalizing to sum to 1.0.
+    """
+    odds_list = competition.get("odds", [])
+    if not odds_list:
+        return None, None, None
+
+    odds = odds_list[0]
+    spread = odds.get("spread")
+
+    moneyline = odds.get("moneyline", {})
+    home_ml = moneyline.get("home", {}).get("close", {}).get("odds")
+    away_ml = moneyline.get("away", {}).get("close", {}).get("odds")
+
+    if not home_ml or not away_ml:
+        # Fall back to spread-based estimate if no moneyline
+        if spread is not None:
+            # Rough conversion: each point of spread ≈ 3% win probability shift
+            home_prob = 0.50 + (abs(float(spread)) * 0.03) * (1 if float(spread) < 0 else -1)
+            home_prob = max(0.02, min(0.98, home_prob))
+            return home_prob, 1 - home_prob, float(spread)
+        return None, None, None
+
+    home_ml = float(home_ml)
+    away_ml = float(away_ml)
+
+    # Convert American odds to implied probability
+    def _american_to_prob(odds: float) -> float:
+        if odds < 0:
+            return abs(odds) / (abs(odds) + 100)
+        else:
+            return 100 / (odds + 100)
+
+    home_imp = _american_to_prob(home_ml)
+    away_imp = _american_to_prob(away_ml)
+
+    # Remove vig by normalizing
+    total = home_imp + away_imp
+    if total > 0:
+        home_prob = home_imp / total
+        away_prob = away_imp / total
+    else:
+        home_prob, away_prob = 0.5, 0.5
+
+    return home_prob, away_prob, float(spread) if spread else None
+
+
 def _extract_region(event: dict) -> str | None:
     """Extract region name from ESPN event data."""
     competitions = event.get("competitions", [])
@@ -309,6 +359,22 @@ def _process_event(event: dict, all_teams: list[Team], db: Session, stats: dict)
 
     game.score1 = comp_data[0]["score"]
     game.score2 = comp_data[1]["score"]
+
+    # Parse odds — ESPN competitors[0] is away, competitors[1] is home
+    # but our team1/team2 follows the same competitor order
+    home_prob, away_prob, spread_val = _parse_odds(competition)
+    if home_prob is not None:
+        # competitors[0] = away, competitors[1] = home in ESPN data
+        # Check homeAway field to be safe
+        comp0_ha = competitors[0].get("homeAway", "away")
+        if comp0_ha == "home":
+            game.team1_win_prob = round(home_prob, 4)
+            game.team2_win_prob = round(away_prob, 4)
+            game.spread = round(-spread_val, 1) if spread_val else None
+        else:
+            game.team1_win_prob = round(away_prob, 4)
+            game.team2_win_prob = round(home_prob, 4)
+            game.spread = round(spread_val, 1) if spread_val else None
 
     # Determine winner if game is final
     if game_status == "final":

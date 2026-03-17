@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, Float, String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -48,6 +48,11 @@ class Game(Base):
     winner_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
 
     status = Column(String, default="scheduled")  # scheduled, in_progress, final
+
+    # DraftKings implied win probabilities (vig-removed)
+    team1_win_prob = Column(Float, nullable=True)
+    team2_win_prob = Column(Float, nullable=True)
+    spread = Column(Float, nullable=True)  # from team1 perspective
 
     team1 = relationship("Team", foreign_keys=[team1_id])
     team2 = relationship("Team", foreign_keys=[team2_id])

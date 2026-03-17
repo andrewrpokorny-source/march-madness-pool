@@ -1,14 +1,12 @@
-"""Advanced analytics using historical seed win probabilities."""
+"""Advanced analytics using DraftKings odds from ESPN + historical fallbacks."""
 
 from sqlalchemy.orm import Session
 
 from app.models import Owner, Team, Game
 from app.config import ROUND_PRIZES, ROUND_ORDER
 
-# Historical probability of a seed advancing past each round.
-# Source: aggregated NCAA tournament data 1985-2024.
-# Index 0 = P(win R64), 1 = P(win R64 & R32), ..., 5 = P(win all 6 = champion)
-# For First Four teams, we halve the base seed probability.
+# Historical fallback: probability of advancing past each round by seed.
+# Used only when Vegas odds are not available for a game.
 SEED_ADVANCE_PROBS = {
     1:  [0.993, 0.850, 0.600, 0.420, 0.270, 0.150],
     2:  [0.943, 0.720, 0.440, 0.275, 0.155, 0.080],
@@ -28,17 +26,15 @@ SEED_ADVANCE_PROBS = {
     16: [0.007, 0.002, 0.0005, 0.0001, 0.00003, 0.00001],
 }
 
-# Prize per round (indexed same as SEED_ADVANCE_PROBS)
 ROUND_PRIZE_LIST = [
-    ROUND_PRIZES["Round of 64"],    # $1
-    ROUND_PRIZES["Round of 32"],    # $2
-    ROUND_PRIZES["Sweet 16"],       # $5
-    ROUND_PRIZES["Elite 8"],        # $10
-    ROUND_PRIZES["Final Four"],     # $20
-    ROUND_PRIZES["Championship"],   # $50
+    ROUND_PRIZES["Round of 64"],
+    ROUND_PRIZES["Round of 32"],
+    ROUND_PRIZES["Sweet 16"],
+    ROUND_PRIZES["Elite 8"],
+    ROUND_PRIZES["Final Four"],
+    ROUND_PRIZES["Championship"],
 ]
 
-# Map round name to index for determining how far a team has advanced
 ROUND_INDEX = {
     "First Four": -1,
     "Round of 64": 0,
@@ -50,167 +46,273 @@ ROUND_INDEX = {
 }
 
 
-def _expected_winnings_for_seed(seed: int, is_playin: bool = False) -> float:
-    """Calculate pre-tournament expected winnings for a team by seed."""
+def _get_team_win_prob(game: Game, team_id: int) -> float | None:
+    """Get the Vegas-implied win probability for a team in a specific game."""
+    if game.team1_id == team_id and game.team1_win_prob is not None:
+        return game.team1_win_prob
+    if game.team2_id == team_id and game.team2_win_prob is not None:
+        return game.team2_win_prob
+    return None
+
+
+def _historical_round_prob(seed: int, round_idx: int) -> float:
+    """Fallback: historical probability of winning in a specific round."""
     probs = SEED_ADVANCE_PROBS.get(seed, SEED_ADVANCE_PROBS[16])
-    if is_playin:
-        # Play-in teams have ~50% chance of even reaching R64
-        probs = [p * 0.5 for p in probs]
-        # Add First Four prize: 50% chance of winning play-in game
-        first_four_ev = 0.5 * ROUND_PRIZES["First Four"]
-    else:
-        first_four_ev = 0
-
-    ev = first_four_ev
-    for i, prob in enumerate(probs):
-        ev += prob * ROUND_PRIZE_LIST[i]
-    return round(ev, 2)
-
-
-def _current_round_index(team: Team, db: Session) -> int:
-    """Determine how far a team has advanced (highest round won)."""
-    if team.eliminated:
-        # Find the last round they won
-        last_win = (
-            db.query(Game)
-            .filter(Game.winner_id == team.id, Game.status == "final")
-            .all()
-        )
-        if not last_win:
-            return -1
-        max_idx = max(ROUND_INDEX.get(g.round_name, -1) for g in last_win)
-        return max_idx
-    else:
-        wins = (
-            db.query(Game)
-            .filter(Game.winner_id == team.id, Game.status == "final")
-            .all()
-        )
-        if not wins:
-            return -1
-        return max(ROUND_INDEX.get(g.round_name, -1) for g in wins)
-
-
-def _remaining_ev(team: Team, current_round_idx: int) -> float:
-    """Expected value from remaining rounds for a team still alive."""
-    if team.eliminated:
+    if round_idx < 0 or round_idx >= len(probs):
         return 0.0
+    return probs[round_idx]
 
-    seed = team.seed
-    probs = SEED_ADVANCE_PROBS.get(seed, SEED_ADVANCE_PROBS[16])
 
-    ev = 0.0
-    for i in range(current_round_idx + 1, len(probs)):
-        # Conditional probability of winning round i given reached it
-        if current_round_idx < 0:
-            # Haven't won any games yet
-            cond_prob = probs[i]
-        else:
-            # Conditional: P(advance past round i | advanced past current)
-            p_reached = probs[current_round_idx] if current_round_idx >= 0 else 1.0
-            if p_reached > 0:
-                cond_prob = probs[i] / p_reached
+def _compute_team_ev(team: Team, all_games: list[Game], db: Session) -> dict:
+    """Compute expected value for a team using Vegas odds where available.
+
+    For each round:
+    - If the game is final: use actual result (1.0 win or 0.0)
+    - If the game exists with Vegas odds: use implied probability
+    - If the game exists but no odds: use spread estimate or seed fallback
+    - If no game exists (future round, TBD): use historical seed probability
+
+    Returns dict with per-round probabilities and expected values.
+    """
+    # Find all games this team is in
+    team_games = {}
+    for g in all_games:
+        if g.team1_id == team.id or g.team2_id == team.id:
+            round_idx = ROUND_INDEX.get(g.round_name, -1)
+            team_games[round_idx] = g
+
+    round_probs = []  # P(winning in each round)
+    round_sources = []  # Where the probability came from
+    cumulative_prob = 1.0  # P(reaching this round)
+
+    if team.eliminated:
+        # Team is out — actual wins are known, future rounds are 0
+        for i in range(6):
+            game = team_games.get(i)
+            if game and game.status == "final" and game.winner_id == team.id:
+                round_probs.append(1.0)
+                round_sources.append("result")
             else:
-                cond_prob = 0
-        ev += cond_prob * ROUND_PRIZE_LIST[i]
+                round_probs.append(0.0)
+                round_sources.append("eliminated")
+        return {
+            "round_probs": round_probs,
+            "round_sources": round_sources,
+        }
 
-    return round(ev, 2)
+    for i in range(6):
+        game = team_games.get(i)
+
+        if game and game.status == "final":
+            # Game completed
+            if game.winner_id == team.id:
+                round_probs.append(1.0)
+                round_sources.append("result")
+            else:
+                round_probs.append(0.0)
+                round_sources.append("result")
+                # Team lost — zero out remaining rounds
+                for j in range(i + 1, 6):
+                    round_probs.append(0.0)
+                    round_sources.append("eliminated")
+                break
+        elif game and (game.team1_win_prob is not None or game.team2_win_prob is not None):
+            # Game exists with Vegas odds
+            prob = _get_team_win_prob(game, team.id)
+            if prob is not None:
+                round_probs.append(prob)
+                round_sources.append("vegas")
+            else:
+                # Fallback for this game
+                prob = _historical_conditional_prob(team.seed, i, round_probs)
+                round_probs.append(prob)
+                round_sources.append("seed")
+        elif game:
+            # Game exists but no odds — use seed-based estimate
+            prob = _historical_conditional_prob(team.seed, i, round_probs)
+            round_probs.append(prob)
+            round_sources.append("seed")
+        else:
+            # No game yet (future round) — use historical seed probability
+            prob = _historical_conditional_prob(team.seed, i, round_probs)
+            round_probs.append(prob)
+            round_sources.append("seed")
+
+    return {
+        "round_probs": round_probs,
+        "round_sources": round_sources,
+    }
 
 
-def _max_remaining(team: Team, current_round_idx: int) -> float:
-    """Maximum possible winnings if a team wins every remaining game."""
-    if team.eliminated:
+def _historical_conditional_prob(seed: int, round_idx: int, prior_probs: list[float]) -> float:
+    """Get conditional probability of winning in round_idx given prior results."""
+    probs = SEED_ADVANCE_PROBS.get(seed, SEED_ADVANCE_PROBS[16])
+    if round_idx >= len(probs):
         return 0.0
 
-    total = 0.0
-    for i in range(current_round_idx + 1, len(ROUND_PRIZE_LIST)):
-        total += ROUND_PRIZE_LIST[i]
-    return total
+    # P(win round i) = P(reach round i+1) / P(reach round i)
+    # P(reach round 0) = 1.0 (they're in the tournament)
+    # P(reach round i+1) = probs[i]
+    if round_idx == 0:
+        return probs[0]
+
+    p_reach_this_round = probs[round_idx - 1]
+    p_reach_next_round = probs[round_idx]
+
+    if p_reach_this_round > 0:
+        return p_reach_next_round / p_reach_this_round
+    return 0.0
 
 
 def get_analytics(db: Session) -> dict:
-    """Build comprehensive analytics data."""
+    """Build comprehensive analytics using Vegas odds."""
     owners = db.query(Owner).all()
-    all_games = db.query(Game).filter(Game.status == "final").all()
+    all_games = db.query(Game).all()
+    completed_games = [g for g in all_games if g.status == "final"]
+
+    # Count how many games have Vegas odds
+    games_with_odds = sum(1 for g in all_games if g.team1_win_prob is not None)
 
     owner_analytics = []
 
     for owner in owners:
         teams = owner.teams
         actual_winnings = 0.0
-        pre_tournament_ev = 0.0
         projected_winnings = 0.0
         max_possible = 0.0
         team_details = []
 
         for team in teams:
-            # Pre-tournament EV
-            team_pre_ev = _expected_winnings_for_seed(team.seed, team.is_playin)
-            pre_tournament_ev += team_pre_ev
-
-            # Actual winnings so far
-            wins = [g for g in all_games if g.winner_id == team.id]
+            # Actual winnings
+            wins = [g for g in completed_games if g.winner_id == team.id]
             team_actual = sum(ROUND_PRIZES.get(g.round_name, 0) for g in wins)
             actual_winnings += team_actual
 
-            # Current advancement
-            current_idx = _current_round_index(team, db)
+            # Compute EV using Vegas odds + fallback
+            ev_data = _compute_team_ev(team, all_games, db)
 
-            # Remaining EV
-            team_remaining_ev = _remaining_ev(team, current_idx)
-            projected_winnings += team_actual + team_remaining_ev
+            # Calculate expected winnings per round
+            team_ev = 0.0
+            round_details = []
+            cumulative_p = 1.0
+            for i in range(6):
+                win_prob = ev_data["round_probs"][i]
+                source = ev_data["round_sources"][i]
+                prize = ROUND_PRIZE_LIST[i]
 
-            # Max upside
-            team_max = team_actual + _max_remaining(team, current_idx)
+                if source == "result":
+                    # Already happened
+                    round_ev = prize if win_prob == 1.0 else 0.0
+                else:
+                    # Future: expected value = cumulative probability of reaching × conditional win prob × prize
+                    round_ev = cumulative_p * win_prob * prize
+
+                team_ev += round_ev
+                round_details.append({
+                    "round": ROUND_ORDER[i + 1],  # Skip First Four
+                    "win_prob": round(win_prob, 4),
+                    "source": source,
+                    "ev": round(round_ev, 2),
+                })
+
+                if source == "result":
+                    if win_prob == 0.0:
+                        cumulative_p = 0.0
+                    # If won, cumulative stays the same
+                else:
+                    cumulative_p *= win_prob
+
+            # Add First Four EV for play-in teams
+            first_four_ev = 0.0
+            if team.is_playin:
+                ff_game = next(
+                    (g for g in all_games
+                     if g.round_name == "First Four"
+                     and (g.team1_id == team.id or g.team2_id == team.id)),
+                    None,
+                )
+                if ff_game:
+                    if ff_game.status == "final" and ff_game.winner_id == team.id:
+                        first_four_ev = ROUND_PRIZES["First Four"]
+                    elif ff_game.status != "final":
+                        prob = _get_team_win_prob(ff_game, team.id)
+                        if prob is None:
+                            prob = 0.5
+                        first_four_ev = prob * ROUND_PRIZES["First Four"]
+
+            team_ev += first_four_ev
+            team_projected = round(team_ev, 2)
+            projected_winnings += team_projected
+
+            # Max possible (if team wins every remaining game)
+            team_max = team_actual
+            if not team.eliminated:
+                current_wins = len(wins)
+                for i in range(current_wins, 6):
+                    team_max += ROUND_PRIZE_LIST[i]
+                if team.is_playin:
+                    ff_game = next(
+                        (g for g in all_games
+                         if g.round_name == "First Four"
+                         and (g.team1_id == team.id or g.team2_id == team.id)),
+                        None,
+                    )
+                    if ff_game and ff_game.status != "final":
+                        team_max += ROUND_PRIZES["First Four"]
             max_possible += team_max
+
+            # Vegas line display
+            current_game = next(
+                (g for g in all_games
+                 if g.status == "scheduled"
+                 and (g.team1_id == team.id or g.team2_id == team.id)),
+                None,
+            )
+            vegas_line = None
+            if current_game and current_game.spread is not None:
+                if current_game.team1_id == team.id:
+                    vegas_line = current_game.spread
+                else:
+                    vegas_line = -current_game.spread
 
             team_details.append({
                 "team": team,
-                "pre_ev": team_pre_ev,
-                "actual": team_actual,
-                "remaining_ev": team_remaining_ev,
-                "projected": round(team_actual + team_remaining_ev, 2),
-                "max_possible": team_max,
+                "actual": round(team_actual, 2),
+                "projected": team_projected,
+                "max_possible": round(team_max, 2),
                 "wins": len(wins),
-                "current_round": current_idx,
-                "performance": round(team_actual - team_pre_ev, 2),
+                "round_details": round_details,
+                "vegas_line": vegas_line,
+                "first_four_ev": round(first_four_ev, 2),
             })
 
-        # Sort team details: alive first, then by projected desc
         team_details.sort(key=lambda t: (t["team"].eliminated, -t["projected"]))
 
         owner_analytics.append({
             "owner": owner,
-            "pre_tournament_ev": round(pre_tournament_ev, 2),
             "actual_winnings": round(actual_winnings, 2),
             "projected_winnings": round(projected_winnings, 2),
             "max_possible": round(max_possible, 2),
             "active_teams": sum(1 for t in teams if not t.eliminated),
             "total_teams": len(teams),
             "teams": team_details,
-            "performance_vs_expected": round(actual_winnings - pre_tournament_ev, 2),
         })
 
-    # Sort by projected winnings
     owner_analytics.sort(key=lambda o: -o["projected_winnings"])
 
-    # Find overperformers and underperformers across all teams
+    # Over/underperformers: teams with biggest gap between actual and EV
     all_team_details = []
     for oa in owner_analytics:
         for td in oa["teams"]:
             td["owner_name"] = oa["owner"].name
             all_team_details.append(td)
 
-    overperformers = sorted(all_team_details, key=lambda t: -t["performance"])[:5]
-    underperformers = sorted(all_team_details, key=lambda t: t["performance"])[:5]
-
-    # Total pot
     total_actual = sum(o["actual_winnings"] for o in owner_analytics)
 
     return {
         "owners": owner_analytics,
-        "overperformers": overperformers,
-        "underperformers": underperformers,
         "total_pot": round(total_actual, 2),
-        "games_played": len(all_games),
+        "games_played": len(completed_games),
+        "games_with_odds": games_with_odds,
+        "total_games": len(all_games),
     }
