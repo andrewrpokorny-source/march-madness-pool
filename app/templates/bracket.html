@@ -6,7 +6,7 @@
 {% macro render_matchup(game) %}
 <div class="matchup">
     {% if game.team1 %}
-    <div class="team-slot owner-{{ game.team1.owner.name | lower }} {{ 'winner' if game.winner_id == game.team1_id else ('loser' if game.status == 'final' and game.winner_id and game.winner_id != game.team1_id else '') }}">
+    <div class="team-slot owner-{{ game.team1.owner.name | lower }} {{ 'winner' if game.winner_id == game.team1_id else ('loser' if game.status == 'final' and game.winner_id and game.winner_id != game.team1_id else '') }}" data-owner="{{ game.team1.owner.name | lower }}">
         <span class="seed">{{ game.team1.seed }}</span>
         <span class="name">{{ game.team1.name }}</span>
         <span class="owner-tag">{{ game.team1.owner.name }}</span>
@@ -19,7 +19,7 @@
     {% endif %}
 
     {% if game.team2 %}
-    <div class="team-slot owner-{{ game.team2.owner.name | lower }} {{ 'winner' if game.winner_id == game.team2_id else ('loser' if game.status == 'final' and game.winner_id and game.winner_id != game.team2_id else '') }}">
+    <div class="team-slot owner-{{ game.team2.owner.name | lower }} {{ 'winner' if game.winner_id == game.team2_id else ('loser' if game.status == 'final' and game.winner_id and game.winner_id != game.team2_id else '') }}" data-owner="{{ game.team2.owner.name | lower }}">
         <span class="seed">{{ game.team2.seed }}</span>
         <span class="name">{{ game.team2.name }}</span>
         <span class="owner-tag">{{ game.team2.owner.name }}</span>
@@ -78,6 +78,7 @@
         border-bottom: 1px solid #f3f4f6;
         min-height: 32px;
         gap: 4px;
+        transition: opacity 0.2s;
     }
     .matchup .team-slot:last-child { border-bottom: none; }
     .team-slot.winner { font-weight: 700; }
@@ -92,6 +93,13 @@
     .team-slot .score { font-weight: 700; min-width: 24px; text-align: right; }
     .team-slot .owner-tag { font-size: 0.6rem; font-weight: 600; white-space: nowrap; }
     .team-slot.tbd { color: #d1d5db; font-style: italic; }
+
+    /* Owner highlight filter */
+    .team-slot.dimmed {
+        opacity: 0.15 !important;
+        border-left-color: #e5e7eb !important;
+        background-color: transparent !important;
+    }
 
     /* Connector lines */
     .round-col:not(:last-child) .matchup { position: relative; }
@@ -145,28 +153,46 @@
     }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
-    /* Legend */
+    /* Legend buttons */
     .legend-dot {
         width: 12px;
         height: 12px;
         border-radius: 3px;
         display: inline-block;
     }
+    .owner-filter-btn {
+        cursor: pointer;
+        padding: 4px 10px;
+        border-radius: 9999px;
+        border: 2px solid transparent;
+        transition: all 0.2s;
+        user-select: none;
+    }
+    .owner-filter-btn:hover {
+        background-color: #f3f4f6;
+    }
+    .owner-filter-btn.active {
+        border-color: currentColor;
+        font-weight: 700;
+    }
 </style>
 
 <div class="mb-6">
     <h1 class="text-3xl font-bold text-gray-900 mb-2">Tournament Bracket</h1>
-    <p class="text-gray-500">Color-coded by pool owner</p>
+    <p class="text-gray-500">Color-coded by pool owner — click a name to highlight their teams</p>
 </div>
 
-<!-- Owner Legend -->
+<!-- Owner Legend / Filter -->
 <div class="bg-white rounded-lg shadow-sm p-4 mb-6">
-    <div class="flex flex-wrap gap-4 text-sm">
+    <div class="flex flex-wrap gap-2 text-sm items-center">
+        <button class="owner-filter-btn active" data-filter="all" onclick="filterOwner('all', this)">
+            <span class="text-gray-700 font-medium">All</span>
+        </button>
         {% for name, color in owner_colors.items() %}
-        <div class="flex items-center gap-1.5">
+        <button class="owner-filter-btn" data-filter="{{ name | lower }}" onclick="filterOwner('{{ name | lower }}', this)" style="color: {{ color }};">
             <span class="legend-dot" style="background-color: {{ color }};"></span>
-            <span class="text-gray-700 font-medium">{{ name }}</span>
-        </div>
+            <span class="font-medium">{{ name }}</span>
+        </button>
         {% endfor %}
     </div>
 </div>
@@ -299,5 +325,38 @@
     </div>
 </div>
 {% endif %}
+
+<script>
+let activeFilter = 'all';
+
+function filterOwner(owner, btn) {
+    // Toggle: clicking the same button resets to "all"
+    if (activeFilter === owner && owner !== 'all') {
+        owner = 'all';
+    }
+    activeFilter = owner;
+
+    // Update button states
+    document.querySelectorAll('.owner-filter-btn').forEach(b => {
+        b.classList.remove('active');
+    });
+    if (owner === 'all') {
+        document.querySelector('[data-filter="all"]').classList.add('active');
+    } else {
+        btn.classList.add('active');
+    }
+
+    // Apply dimming to team slots
+    document.querySelectorAll('.team-slot[data-owner]').forEach(slot => {
+        if (owner === 'all') {
+            slot.classList.remove('dimmed');
+        } else if (slot.dataset.owner === owner) {
+            slot.classList.remove('dimmed');
+        } else {
+            slot.classList.add('dimmed');
+        }
+    });
+}
+</script>
 
 {% endblock %}
