@@ -308,11 +308,28 @@ def get_analytics(db: Session) -> dict:
 
         team_details.sort(key=lambda t: (t["team"].eliminated, -t["projected"]))
 
+        # Deduplicate max_possible for play-in pairs: only one team from
+        # each pair can advance, so count the best max once per pair.
+        seen_playin = {}
+        adjusted_max = 0.0
+        for td in team_details:
+            t = td["team"]
+            if t.playin_label:
+                prev = seen_playin.get(t.playin_label)
+                if prev is None:
+                    seen_playin[t.playin_label] = td["max_possible"]
+                    adjusted_max += td["max_possible"]
+                elif td["max_possible"] > prev:
+                    adjusted_max += td["max_possible"] - prev
+                    seen_playin[t.playin_label] = td["max_possible"]
+            else:
+                adjusted_max += td["max_possible"]
+
         owner_analytics.append({
             "owner": owner,
             "actual_winnings": round(actual_winnings, 2),
             "projected_winnings": round(projected_winnings, 2),
-            "max_possible": round(max_possible, 2),
+            "max_possible": round(adjusted_max, 2),
             "active_teams": _count_effective_teams(teams, alive_only=True),
             "total_teams": _count_effective_teams(teams, alive_only=False),
             "teams": team_details,
