@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{# Macro must be defined before use #}
+{% macro render_matchup(game) %}
+<div class="matchup">
+    {% if game.team1 %}
+    <div class="team-slot owner-{{ game.team1.owner.name | lower }} {{ 'winner' if game.winner_id == game.team1_id else ('loser' if game.status == 'final' and game.winner_id and game.winner_id != game.team1_id else '') }}">
+        <span class="seed">{{ game.team1.seed }}</span>
+        <span class="name">{{ game.team1.name }}</span>
+        <span class="owner-tag">{{ game.team1.owner.name }}</span>
+        {% if game.score1 is not none and (game.status == 'final' or game.status == 'in_progress') %}
+        <span class="score">{{ game.score1 }}</span>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="team-slot tbd"><span class="name">TBD</span></div>
+    {% endif %}
+
+    {% if game.team2 %}
+    <div class="team-slot owner-{{ game.team2.owner.name | lower }} {{ 'winner' if game.winner_id == game.team2_id else ('loser' if game.status == 'final' and game.winner_id and game.winner_id != game.team2_id else '') }}">
+        <span class="seed">{{ game.team2.seed }}</span>
+        <span class="name">{{ game.team2.name }}</span>
+        <span class="owner-tag">{{ game.team2.owner.name }}</span>
+        {% if game.score2 is not none and (game.status == 'final' or game.status == 'in_progress') %}
+        <span class="score">{{ game.score2 }}</span>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="team-slot tbd"><span class="name">TBD</span></div>
+    {% endif %}
+
+    {% if game.status == 'in_progress' %}
+    <div class="text-center py-0.5"><span class="status-live">LIVE</span></div>
+    {% endif %}
+</div>
+{% endmacro %}
+
+<style>
+    /* Owner color palette */
+    {% for name, color in owner_colors.items() %}
+    .owner-{{ name | lower }} { background-color: {{ color }}22; border-left: 3px solid {{ color }}; }
+    .owner-{{ name | lower }} .owner-tag { color: {{ color }}; }
+    {% endfor %}
+
+    /* Bracket layout */
+    .bracket-container {
+        overflow-x: auto;
+        padding-bottom: 1rem;
+    }
+    .region-bracket {
+        display: flex;
+        align-items: stretch;
+        min-width: 700px;
+    }
+    .region-bracket.reverse { flex-direction: row-reverse; }
+    .round-col {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-around;
+        min-width: 160px;
+        padding: 0 4px;
+    }
+    .matchup {
+        margin: 4px 0;
+        background: white;
+        border-radius: 6px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .matchup .team-slot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 10px;
+        font-size: 0.75rem;
+        border-bottom: 1px solid #f3f4f6;
+        min-height: 32px;
+        gap: 4px;
+    }
+    .matchup .team-slot:last-child { border-bottom: none; }
+    .team-slot.winner { font-weight: 700; }
+    .team-slot.loser { opacity: 0.4; }
+    .team-slot .seed {
+        font-weight: 700;
+        color: #6b7280;
+        min-width: 18px;
+        text-align: center;
+    }
+    .team-slot .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .team-slot .score { font-weight: 700; min-width: 24px; text-align: right; }
+    .team-slot .owner-tag { font-size: 0.6rem; font-weight: 600; white-space: nowrap; }
+    .team-slot.tbd { color: #d1d5db; font-style: italic; }
+
+    /* Connector lines */
+    .round-col:not(:last-child) .matchup { position: relative; }
+    .region-bracket:not(.reverse) .round-col:not(:last-child) .matchup::after {
+        content: '';
+        position: absolute;
+        right: -8px;
+        top: 50%;
+        width: 8px;
+        height: 1px;
+        background: #d1d5db;
+    }
+    .region-bracket.reverse .round-col:not(:last-child) .matchup::after {
+        content: '';
+        position: absolute;
+        left: -8px;
+        top: 50%;
+        width: 8px;
+        height: 1px;
+        background: #d1d5db;
+    }
+
+    /* Final Four center */
+    .final-four-center {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        min-width: 180px;
+        padding: 0 12px;
+    }
+    .champion-box {
+        background: linear-gradient(135deg, #FF6B00, #003DA5);
+        color: white;
+        border-radius: 8px;
+        padding: 12px 20px;
+        text-align: center;
+        font-weight: 700;
+    }
+
+    /* Status badges */
+    .status-live {
+        background: #fee2e2;
+        color: #dc2626;
+        padding: 1px 6px;
+        border-radius: 9999px;
+        font-size: 0.6rem;
+        font-weight: 700;
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    /* Legend */
+    .legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        display: inline-block;
+    }
+</style>
+
+<div class="mb-6">
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">Tournament Bracket</h1>
+    <p class="text-gray-500">Color-coded by pool owner</p>
+</div>
+
+<!-- Owner Legend -->
+<div class="bg-white rounded-lg shadow-sm p-4 mb-6">
+    <div class="flex flex-wrap gap-4 text-sm">
+        {% for name, color in owner_colors.items() %}
+        <div class="flex items-center gap-1.5">
+            <span class="legend-dot" style="background-color: {{ color }};"></span>
+            <span class="text-gray-700 font-medium">{{ name }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+{% set region_names = bracket.regions.keys() | list %}
+{% set region_list = region_names if region_names | length > 0 else [] %}
+
+{% if region_list | length > 0 %}
+<!-- Full bracket with regions -->
+<div class="bracket-container">
+    <div class="flex items-stretch" style="min-width: 1400px;">
+        <!-- LEFT SIDE: first two regions -->
+        <div class="flex-1 flex flex-col gap-6">
+            {% for region_name in region_list[:2] %}
+            <div>
+                <h2 class="text-lg font-bold text-madness-blue mb-2 px-2">{{ region_name }} Region</h2>
+                <div class="region-bracket">
+                    {% set region_data = bracket.regions[region_name] %}
+                    {% for round_name in ["Round of 64", "Round of 32", "Sweet 16", "Elite 8"] %}
+                    <div class="round-col">
+                        <div class="text-center text-xs text-gray-400 font-semibold mb-1">{{ round_name }}</div>
+                        {% set round_games = region_data.get(round_name, []) if region_data %}
+                        {% if round_games %}
+                            {% for game in round_games %}
+                            {{ render_matchup(game) }}
+                            {% endfor %}
+                        {% else %}
+                            {% set placeholder_count = {"Round of 64": 8, "Round of 32": 4, "Sweet 16": 2, "Elite 8": 1} %}
+                            {% for _ in range(placeholder_count.get(round_name, 1)) %}
+                            <div class="matchup">
+                                <div class="team-slot tbd"><span class="name">TBD</span></div>
+                                <div class="team-slot tbd"><span class="name">TBD</span></div>
+                            </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- CENTER: Final Four + Championship -->
+        <div class="final-four-center">
+            <div class="text-sm font-bold text-gray-400 uppercase tracking-wider">Final Four</div>
+            {% if bracket.final_four %}
+                {% for game in bracket.final_four %}
+                {{ render_matchup(game) }}
+                {% endfor %}
+            {% else %}
+                <div class="matchup" style="min-width: 160px;">
+                    <div class="team-slot tbd"><span class="name">TBD</span></div>
+                    <div class="team-slot tbd"><span class="name">TBD</span></div>
+                </div>
+                <div class="matchup" style="min-width: 160px;">
+                    <div class="team-slot tbd"><span class="name">TBD</span></div>
+                    <div class="team-slot tbd"><span class="name">TBD</span></div>
+                </div>
+            {% endif %}
+
+            <div class="text-sm font-bold text-madness-orange uppercase tracking-wider mt-2">Championship</div>
+            {% if bracket.championship %}
+                {{ render_matchup(bracket.championship) }}
+            {% else %}
+                <div class="matchup" style="min-width: 160px;">
+                    <div class="team-slot tbd"><span class="name">TBD</span></div>
+                    <div class="team-slot tbd"><span class="name">TBD</span></div>
+                </div>
+            {% endif %}
+
+            {% if bracket.championship and bracket.championship.winner %}
+            <div class="champion-box">
+                Champion<br>
+                ({{ bracket.championship.winner.seed }}) {{ bracket.championship.winner.name }}<br>
+                <span class="text-sm opacity-80">{{ bracket.championship.winner.owner.name }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- RIGHT SIDE: last two regions (reversed) -->
+        <div class="flex-1 flex flex-col gap-6">
+            {% for region_name in region_list[2:4] %}
+            <div>
+                <h2 class="text-lg font-bold text-madness-blue mb-2 px-2 text-right">{{ region_name }} Region</h2>
+                <div class="region-bracket reverse">
+                    {% set region_data = bracket.regions[region_name] %}
+                    {% for round_name in ["Round of 64", "Round of 32", "Sweet 16", "Elite 8"] %}
+                    <div class="round-col">
+                        <div class="text-center text-xs text-gray-400 font-semibold mb-1">{{ round_name }}</div>
+                        {% set round_games = region_data.get(round_name, []) if region_data %}
+                        {% if round_games %}
+                            {% for game in round_games %}
+                            {{ render_matchup(game) }}
+                            {% endfor %}
+                        {% else %}
+                            {% set placeholder_count = {"Round of 64": 8, "Round of 32": 4, "Sweet 16": 2, "Elite 8": 1} %}
+                            {% for _ in range(placeholder_count.get(round_name, 1)) %}
+                            <div class="matchup">
+                                <div class="team-slot tbd"><span class="name">TBD</span></div>
+                                <div class="team-slot tbd"><span class="name">TBD</span></div>
+                            </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% else %}
+<!-- Fallback: round-by-round view when no region data yet -->
+<div class="bracket-container">
+    <div class="flex gap-4" style="min-width: {{ (rounds | length) * 200 }}px;">
+        {% for round_name in rounds %}
+        <div class="round-col flex-1" style="min-width: 180px;">
+            <div class="text-center text-xs text-gray-400 font-semibold mb-3 uppercase">{{ round_name }}</div>
+            {% set round_games = games_by_round.get(round_name, []) %}
+            {% if round_games %}
+                {% for game in round_games %}
+                {{ render_matchup(game) }}
+                {% endfor %}
+            {% else %}
+                <div class="text-center text-gray-300 text-sm py-8">No games yet</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

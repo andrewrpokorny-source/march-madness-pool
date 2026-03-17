@@ -137,6 +137,26 @@ def _determine_round(event: dict) -> str:
     return "Round of 64"
 
 
+REGIONS = ["South", "East", "West", "Midwest"]
+
+
+def _extract_region(event: dict) -> str | None:
+    """Extract region name from ESPN event data."""
+    competitions = event.get("competitions", [])
+    if competitions:
+        notes = competitions[0].get("notes", [])
+        for note in notes:
+            headline = note.get("headline", "")
+            for region in REGIONS:
+                if region.lower() in headline.lower():
+                    return region
+    name = event.get("name", "")
+    for region in REGIONS:
+        if region.lower() in name.lower():
+            return region
+    return None
+
+
 def _process_event(event: dict, all_teams: list[Team], db: Session, stats: dict):
     """Process a single ESPN event (game)."""
     espn_game_id = str(event.get("id", ""))
@@ -183,8 +203,9 @@ def _process_event(event: dict, all_teams: list[Team], db: Session, stats: dict)
             "seed": seed,
         })
 
-    # Determine round
+    # Determine round and region
     round_name = _determine_round(event)
+    region = _extract_region(event)
 
     # Parse game date
     game_date = None
@@ -205,6 +226,7 @@ def _process_event(event: dict, all_teams: list[Team], db: Session, stats: dict)
         stats["games_updated"] += 1
 
     game.round_name = round_name
+    game.region = region
     game.game_date = game_date
     game.status = game_status
 
