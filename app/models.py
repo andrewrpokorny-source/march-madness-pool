@@ -22,6 +22,7 @@ class Team(Base):
     region = Column(String, nullable=True)
     espn_id = Column(String, nullable=True, unique=True)
     espn_logo_url = Column(String, nullable=True)
+    championship_odds = Column(Integer, nullable=True)  # American odds, e.g. +750
     eliminated = Column(Boolean, default=False)
     is_playin = Column(Boolean, default=False)
     playin_label = Column(String, nullable=True)  # e.g. "Texas/NC State"

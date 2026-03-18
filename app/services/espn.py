@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 SCOREBOARD_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard"
 )
+FUTURES_URL = (
+    "https://sports.core.api.espn.com/v2/sports/basketball/leagues/mens-college-basketball"
+    "/seasons/2026/futures"
+)
 
 # ESPN uses group 100 for NCAA Tournament
 TOURNAMENT_PARAMS = {"groups": "100", "limit": "100"}
@@ -183,12 +187,85 @@ async def fetch_tournament_scores(db: Session) -> dict:
                     logger.error(f"ESPN API error for {date_str}: {e}")
                     stats["errors"].append(f"ESPN {date_str}: {e}")
 
+        # Fetch championship futures odds
+        try:
+            await _fetch_futures(client, all_teams, stats)
+        except Exception as e:
+            logger.error(f"Futures fetch error: {e}")
+            stats["errors"].append(f"Futures: {e}")
+
         db.commit()
     except Exception as e:
         logger.error(f"ESPN sync error: {e}")
         stats["errors"].append(str(e))
 
     return stats
+
+
+async def _fetch_futures(client: httpx.AsyncClient, all_teams: list[Team], stats: dict):
+    """Fetch championship futures odds from ESPN and store on Team records."""
+    import re
+
+    # First, find the championship winner futures ID
+    resp = await client.get(FUTURES_URL, params={"lang": "en", "region": "us"})
+    resp.raise_for_status()
+    index = resp.json()
+
+    champ_url = None
+    for item in index.get("items", []):
+        ref = item.get("$ref", "")
+        # The championship winner future — fetch each to check the name,
+        # or use the last one (typically the winner market has the highest ID)
+        champ_url = ref  # We'll check them all below
+
+    # Try all futures to find the "Winner" market
+    for item in index.get("items", []):
+        ref = item.get("$ref", "").replace("http://", "https://")
+        if not ref:
+            continue
+        try:
+            resp = await client.get(ref)
+            resp.raise_for_status()
+            data = resp.json()
+            name = data.get("name", "")
+            if "Winner" not in name and "winner" not in name.lower():
+                continue
+
+            # Found championship winner futures
+            futures_list = data.get("futures", [])
+            if not futures_list:
+                continue
+
+            books = futures_list[0].get("books", [])
+            espn_id_map = {t.espn_id: t for t in all_teams if t.espn_id}
+            matched = 0
+
+            for book in books:
+                team_ref = book.get("team", {}).get("$ref", "")
+                # Extract team ID from URL like .../teams/130?...
+                m = re.search(r"/teams/(\d+)", team_ref)
+                if not m:
+                    continue
+                espn_id = m.group(1)
+                odds_str = book.get("value", "")
+                try:
+                    odds_val = int(odds_str.replace("+", ""))
+                except (ValueError, AttributeError):
+                    continue
+
+                team = espn_id_map.get(espn_id)
+                if team:
+                    team.championship_odds = odds_val
+                    matched += 1
+
+            logger.info(f"Championship futures: matched {matched}/{len(books)} teams")
+            stats["futures_matched"] = matched
+            return
+
+        except httpx.HTTPError:
+            continue
+
+    logger.warning("Could not find championship winner futures market")
 
 
 def _determine_round(event: dict) -> str:

@@ -1,9 +1,13 @@
 """Advanced analytics using DraftKings odds from ESPN + historical fallbacks."""
 
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.models import Owner, Team, Game
 from app.config import ROUND_PRIZES, ROUND_ORDER
+
+logger = logging.getLogger(__name__)
 
 # Historical fallback: probability of advancing past each round by seed.
 # Used only when Vegas odds are not available for a game.
@@ -55,6 +59,14 @@ def _get_team_win_prob(game: Game, team_id: int) -> float | None:
     return None
 
 
+def _american_odds_to_prob(odds: int) -> float:
+    """Convert American odds to implied probability."""
+    if odds < 0:
+        return abs(odds) / (abs(odds) + 100)
+    else:
+        return 100 / (odds + 100)
+
+
 def _historical_round_prob(seed: int, round_idx: int) -> float:
     """Fallback: historical probability of winning in a specific round."""
     probs = SEED_ADVANCE_PROBS.get(seed, SEED_ADVANCE_PROBS[16])
@@ -63,14 +75,82 @@ def _historical_round_prob(seed: int, round_idx: int) -> float:
     return probs[round_idx]
 
 
+def _calibrate_future_probs(
+    seed: int,
+    first_future_round: int,
+    known_product: float,
+    champ_prob: float,
+) -> list[float]:
+    """Derive per-round conditional win probs for future rounds using futures odds.
+
+    Given:
+    - The team's championship probability (from futures market)
+    - The product of all known round probs so far (known_product)
+    - The first round index that needs a future estimate
+
+    We know: P(win championship) = known_product * P(win round[first_future]) * ... * P(win round[5])
+
+    So: product_of_future_rounds = champ_prob / known_product
+
+    We distribute this across future rounds using the seed-based historical
+    shape as a prior, scaling so the product matches the futures-implied total.
+    """
+    num_future = 6 - first_future_round
+    if num_future <= 0:
+        return []
+
+    # Target: product of future conditional probs
+    if known_product <= 0:
+        return [0.0] * num_future
+
+    target_product = champ_prob / known_product
+    target_product = max(0.0, min(1.0, target_product))
+
+    if target_product <= 0:
+        return [0.0] * num_future
+
+    # Get seed-based conditional probs as the shape prior
+    seed_probs = []
+    for i in range(first_future_round, 6):
+        seed_probs.append(_historical_conditional_prob(seed, i, []))
+
+    # Product of seed-based probs
+    seed_product = 1.0
+    for p in seed_probs:
+        seed_product *= max(p, 1e-10)
+
+    if seed_product <= 0:
+        return [target_product ** (1.0 / num_future)] * num_future
+
+    # Scale factor: multiply each log-prob by this to hit the target product
+    # seed_product^scale = target_product => scale = log(target) / log(seed)
+    import math
+    log_target = math.log(max(target_product, 1e-15))
+    log_seed = math.log(max(seed_product, 1e-15))
+
+    if abs(log_seed) < 1e-10:
+        return [target_product ** (1.0 / num_future)] * num_future
+
+    scale = log_target / log_seed
+
+    # Apply scale to each seed prob (in log space) to get calibrated probs
+    calibrated = []
+    for p in seed_probs:
+        # p^scale preserves the relative shape while hitting the right product
+        cp = max(0.001, min(0.99, p ** scale))
+        calibrated.append(round(cp, 6))
+
+    return calibrated
+
+
 def _compute_team_ev(team: Team, all_games: list[Game], db: Session) -> dict:
     """Compute expected value for a team using Vegas odds where available.
 
     For each round:
     - If the game is final: use actual result (1.0 win or 0.0)
     - If the game exists with Vegas odds: use implied probability
-    - If the game exists but no odds: use spread estimate or seed fallback
-    - If no game exists (future round, TBD): use historical seed probability
+    - If the team has championship futures: calibrate future rounds from those
+    - Otherwise: use historical seed probability as fallback
 
     Returns dict with per-round probabilities and expected values.
     """
@@ -83,7 +163,6 @@ def _compute_team_ev(team: Team, all_games: list[Game], db: Session) -> dict:
 
     round_probs = []  # P(winning in each round)
     round_sources = []  # Where the probability came from
-    cumulative_prob = 1.0  # P(reaching this round)
 
     if team.eliminated:
         # Team is out — actual wins are known, future rounds are 0
@@ -100,40 +179,57 @@ def _compute_team_ev(team: Team, all_games: list[Game], db: Session) -> dict:
             "round_sources": round_sources,
         }
 
+    # First pass: fill in known rounds (results + current game odds)
+    first_future_round = None
+    known_product = 1.0
+
     for i in range(6):
         game = team_games.get(i)
 
         if game and game.status == "final":
-            # Game completed
             if game.winner_id == team.id:
                 round_probs.append(1.0)
                 round_sources.append("result")
             else:
                 round_probs.append(0.0)
                 round_sources.append("result")
-                # Team lost — zero out remaining rounds
                 for j in range(i + 1, 6):
                     round_probs.append(0.0)
                     round_sources.append("eliminated")
-                break
+                return {"round_probs": round_probs, "round_sources": round_sources}
         elif game and (game.team1_win_prob is not None or game.team2_win_prob is not None):
-            # Game exists with Vegas odds
             prob = _get_team_win_prob(game, team.id)
             if prob is not None:
                 round_probs.append(prob)
                 round_sources.append("vegas")
+                known_product *= prob
             else:
-                # Fallback for this game
-                prob = _historical_conditional_prob(team.seed, i, round_probs)
-                round_probs.append(prob)
-                round_sources.append("seed")
-        elif game:
-            # Game exists but no odds — use seed-based estimate
-            prob = _historical_conditional_prob(team.seed, i, round_probs)
-            round_probs.append(prob)
-            round_sources.append("seed")
+                first_future_round = i
+                break
         else:
-            # No game yet (future round) — use historical seed probability
+            first_future_round = i
+            break
+
+    if first_future_round is None:
+        # All 6 rounds accounted for
+        return {"round_probs": round_probs, "round_sources": round_sources}
+
+    # Second pass: fill future rounds using championship odds or seed fallback
+    champ_prob = None
+    if team.championship_odds is not None:
+        champ_prob = _american_odds_to_prob(team.championship_odds)
+
+    if champ_prob is not None and champ_prob > 0:
+        # Use futures-calibrated probabilities for remaining rounds
+        calibrated = _calibrate_future_probs(
+            team.seed, first_future_round, known_product, champ_prob,
+        )
+        for i, cp in enumerate(calibrated):
+            round_probs.append(cp)
+            round_sources.append("futures")
+    else:
+        # No futures — fall back to seed-based historical
+        for i in range(first_future_round, 6):
             prob = _historical_conditional_prob(team.seed, i, round_probs)
             round_probs.append(prob)
             round_sources.append("seed")
@@ -192,6 +288,10 @@ def get_analytics(db: Session) -> dict:
 
     # Count how many games have Vegas odds
     games_with_odds = sum(1 for g in all_games if g.team1_win_prob is not None)
+
+    # Count how many teams have championship futures
+    all_team_objs = db.query(Team).all()
+    teams_with_futures = sum(1 for t in all_team_objs if t.championship_odds is not None)
 
     owner_analytics = []
 
@@ -351,5 +451,6 @@ def get_analytics(db: Session) -> dict:
         "total_pot": round(total_actual, 2),
         "games_played": len(completed_games),
         "games_with_odds": games_with_odds,
+        "teams_with_futures": teams_with_futures,
         "total_games": len(all_games),
     }
