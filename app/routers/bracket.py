@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -101,7 +102,13 @@ async def games(request: Request, round_name: str | None = None, db: Session = D
             auto_round = live_game.round_name
 
     active_round = round_name or auto_round
-    query = db.query(Game).order_by(Game.game_date.desc().nullslast())
+    # Sort: live first, then final, then scheduled; within each group by date
+    status_order = case(
+        (Game.status == "in_progress", 0),
+        (Game.status == "final", 1),
+        else_=2,
+    )
+    query = db.query(Game).order_by(status_order, Game.game_date.desc().nullslast())
 
     if active_round:
         query = query.filter(Game.round_name == active_round)
