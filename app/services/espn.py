@@ -370,11 +370,14 @@ def _process_event(event: dict, all_teams: list[Team], db: Session, stats: dict)
         if comp0_ha == "home":
             game.team1_win_prob = round(home_prob, 4)
             game.team2_win_prob = round(away_prob, 4)
-            game.spread = round(-spread_val, 1) if spread_val else None
+            # ESPN spread is from home perspective (negative = home favored)
+            # team1 = home here, so keep sign as-is for team1 perspective
+            game.spread = round(spread_val, 1) if spread_val else None
         else:
             game.team1_win_prob = round(away_prob, 4)
             game.team2_win_prob = round(home_prob, 4)
-            game.spread = round(spread_val, 1) if spread_val else None
+            # team1 = away here, so negate to get team1 perspective
+            game.spread = round(-spread_val, 1) if spread_val else None
 
     # Determine winner if game is final
     if game_status == "final":

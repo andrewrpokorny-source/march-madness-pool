@@ -89,10 +89,22 @@ async def bracket_view(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/games", response_class=HTMLResponse)
 async def games(request: Request, round_name: str | None = None, db: Session = Depends(get_db)):
+    # "all" means user explicitly wants all games
+    if round_name == "all":
+        round_name = None
+
+    # Auto-detect round with live games if no filter specified
+    auto_round = None
+    if round_name is None and "round_name" not in request.query_params:
+        live_game = db.query(Game).filter(Game.status == "in_progress").first()
+        if live_game:
+            auto_round = live_game.round_name
+
+    active_round = round_name or auto_round
     query = db.query(Game).order_by(Game.game_date.desc().nullslast())
 
-    if round_name:
-        query = query.filter(Game.round_name == round_name)
+    if active_round:
+        query = query.filter(Game.round_name == active_round)
 
     games = query.all()
 
@@ -100,7 +112,7 @@ async def games(request: Request, round_name: str | None = None, db: Session = D
         "request": request,
         "games": games,
         "rounds": ROUND_ORDER,
-        "selected_round": round_name,
+        "selected_round": active_round,
         "page_title": "Games",
     })
 
