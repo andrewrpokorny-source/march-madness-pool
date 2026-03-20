@@ -207,14 +207,13 @@
     </div>
 </div>
 
-{% set region_names = bracket.regions.keys() | list %}
-{% set region_list = region_names if region_names | length > 0 else [] %}
+{% set region_list = bracket.regions.keys() | list %}
 
 {% if region_list | length > 0 %}
 <!-- Full bracket with regions -->
 <div class="bracket-container">
     <div class="bracket-wrapper">
-        <!-- LEFT SIDE: first two regions -->
+        <!-- LEFT SIDE: East (top) and South (bottom) -->
         <div class="flex-1 flex flex-col gap-4">
             {% for region_name in region_list[:2] %}
             <div>
@@ -224,14 +223,21 @@
                     {% for round_name in ["Round of 64", "Round of 32", "Sweet 16", "Elite 8"] %}
                     <div class="round-col">
                         <div class="text-center text-gray-400 font-semibold mb-1" style="font-size: 0.6rem;">{{ round_name }}</div>
-                        {% set round_games = region_data.get(round_name, []) if region_data %}
+                        {% set round_games = region_data.get(round_name, []) if region_data else [] %}
+                        {% set expected_count = {"Round of 64": 8, "Round of 32": 4, "Sweet 16": 2, "Elite 8": 1} %}
                         {% if round_games %}
                             {% for game in round_games %}
                             {{ render_matchup(game) }}
                             {% endfor %}
+                            {# Fill remaining slots with TBD if we have fewer games than expected #}
+                            {% for _ in range(expected_count.get(round_name, 1) - round_games|length) %}
+                            <div class="matchup">
+                                <div class="team-slot tbd"><span class="name">TBD</span></div>
+                                <div class="team-slot tbd"><span class="name">TBD</span></div>
+                            </div>
+                            {% endfor %}
                         {% else %}
-                            {% set placeholder_count = {"Round of 64": 8, "Round of 32": 4, "Sweet 16": 2, "Elite 8": 1} %}
-                            {% for _ in range(placeholder_count.get(round_name, 1)) %}
+                            {% for _ in range(expected_count.get(round_name, 1)) %}
                             <div class="matchup">
                                 <div class="team-slot tbd"><span class="name">TBD</span></div>
                                 <div class="team-slot tbd"><span class="name">TBD</span></div>
@@ -282,7 +288,7 @@
             {% endif %}
         </div>
 
-        <!-- RIGHT SIDE: last two regions (reversed) -->
+        <!-- RIGHT SIDE: West (top) and Midwest (bottom), reversed -->
         <div class="flex-1 flex flex-col gap-4">
             {% for region_name in region_list[2:4] %}
             <div>
@@ -292,14 +298,20 @@
                     {% for round_name in ["Round of 64", "Round of 32", "Sweet 16", "Elite 8"] %}
                     <div class="round-col">
                         <div class="text-center text-gray-400 font-semibold mb-1" style="font-size: 0.6rem;">{{ round_name }}</div>
-                        {% set round_games = region_data.get(round_name, []) if region_data %}
+                        {% set round_games = region_data.get(round_name, []) if region_data else [] %}
+                        {% set expected_count = {"Round of 64": 8, "Round of 32": 4, "Sweet 16": 2, "Elite 8": 1} %}
                         {% if round_games %}
                             {% for game in round_games %}
                             {{ render_matchup(game) }}
                             {% endfor %}
+                            {% for _ in range(expected_count.get(round_name, 1) - round_games|length) %}
+                            <div class="matchup">
+                                <div class="team-slot tbd"><span class="name">TBD</span></div>
+                                <div class="team-slot tbd"><span class="name">TBD</span></div>
+                            </div>
+                            {% endfor %}
                         {% else %}
-                            {% set placeholder_count = {"Round of 64": 8, "Round of 32": 4, "Sweet 16": 2, "Elite 8": 1} %}
-                            {% for _ in range(placeholder_count.get(round_name, 1)) %}
+                            {% for _ in range(expected_count.get(round_name, 1)) %}
                             <div class="matchup">
                                 <div class="team-slot tbd"><span class="name">TBD</span></div>
                                 <div class="team-slot tbd"><span class="name">TBD</span></div>
