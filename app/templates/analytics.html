@@ -1,82 +1,237 @@
 {% extends "base.html" %}
 
+{% block main_class %}w-full px-3{% endblock %}
+
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 
-<div class="mb-8">
+<div class="mb-6">
     <h1 class="text-3xl font-bold text-gray-900 mb-2">Analytics</h1>
-    <p class="text-gray-500">
-        Powered by <strong>DraftKings moneylines</strong> via ESPN
-        {% if data.games_with_odds > 0 %}
-        &mdash; {{ data.games_with_odds }}/{{ data.total_games }} games with lines
-        {% endif %}
-        {% if data.teams_with_futures > 0 %}
-        &middot; {{ data.teams_with_futures }} teams with futures
-        {% endif %}
-        {% if data.games_played > 0 %}
-        &middot; {{ data.games_played }} games completed &middot; ${{ data.total_pot }} paid out
-        {% endif %}
-    </p>
-    <p class="text-xs text-gray-400 mt-1">
-        Uses game moneylines for current matchups, championship futures to calibrate future rounds, seed averages as fallback
+    <p class="text-gray-500 text-sm">
+        Powered by <strong>ESPN BET</strong> odds
+        {% if data.games_with_odds > 0 %}&mdash; {{ data.games_with_odds }}/{{ data.total_games }} games with lines{% endif %}
+        {% if data.teams_with_futures > 0 %}&middot; {{ data.teams_with_futures }} teams with futures{% endif %}
+        {% if data.games_played > 0 %}&middot; {{ data.games_played }} games completed &middot; ${{ data.total_pot }}/${{ data.total_pot_possible }} paid{% endif %}
     </p>
 </div>
 
-<!-- Owner Rankings Table -->
+<!-- ===== POOL STANDINGS + SIMULATION ===== -->
 <div class="bg-white rounded-lg shadow-sm overflow-hidden mb-6">
+    <div class="px-4 py-3 bg-gray-50 border-b">
+        <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider">Pool Standings & Simulation</h2>
+        <p class="text-xs text-gray-400">10,000 simulated tournaments based on current odds</p>
+    </div>
     <table class="w-full text-sm">
-        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+        <thead class="text-gray-500 uppercase text-xs border-b">
             <tr>
-                <th class="px-4 py-3 text-left">#</th>
-                <th class="px-4 py-3 text-left">Owner</th>
-                <th class="px-4 py-3 text-right">Actual</th>
-                <th class="px-4 py-3 text-right">Projected</th>
-                <th class="px-4 py-3 text-right">Max Possible</th>
-                <th class="px-4 py-3 text-center">Alive</th>
+                <th class="px-4 py-2 text-left">#</th>
+                <th class="px-4 py-2 text-left">Owner</th>
+                <th class="px-4 py-2 text-right">Earned</th>
+                <th class="px-4 py-2 text-right">Projected</th>
+                <th class="px-4 py-2 text-right">Max</th>
+                <th class="px-4 py-2 text-center">Alive</th>
+                <th class="px-4 py-2 text-right">Win Pool %</th>
+                <th class="px-4 py-2 text-right">Top 3 %</th>
+                <th class="px-4 py-2 text-right">Avg Finish</th>
+                <th class="px-4 py-2 text-left">Best Team</th>
             </tr>
         </thead>
-        <tbody class="divide-y divide-gray-100">
+        <tbody class="divide-y divide-gray-50">
             {% for o in data.owners %}
-            <tr>
-                <td class="px-4 py-3 text-gray-400 font-bold">{{ loop.index }}</td>
-                <td class="px-4 py-3 font-bold text-gray-900">{{ o.owner.name }}</td>
-                <td class="px-4 py-3 text-right font-semibold text-green-600">${{ "%.2f"|format(o.actual_winnings) }}</td>
-                <td class="px-4 py-3 text-right font-bold text-madness-blue">${{ "%.2f"|format(o.projected_winnings) }}</td>
-                <td class="px-4 py-3 text-right text-gray-500">${{ "%.2f"|format(o.max_possible) }}</td>
-                <td class="px-4 py-3 text-center">{{ o.active_teams }} / {{ o.total_teams }}</td>
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-2.5 text-gray-400 font-bold">{{ loop.index }}</td>
+                <td class="px-4 py-2.5 font-bold text-gray-900">{{ o.owner.name }}</td>
+                <td class="px-4 py-2.5 text-right font-semibold text-green-600">${{ "%.2f"|format(o.actual_winnings) }}</td>
+                <td class="px-4 py-2.5 text-right font-bold text-madness-blue">${{ "%.2f"|format(o.projected_winnings) }}</td>
+                <td class="px-4 py-2.5 text-right text-gray-400">${{ "%.0f"|format(o.max_possible) }}</td>
+                <td class="px-4 py-2.5 text-center">
+                    <span class="{% if o.active_teams >= 7 %}text-green-600{% elif o.active_teams >= 5 %}text-yellow-600{% else %}text-red-500{% endif %} font-semibold">
+                        {{ o.active_teams }}
+                    </span>
+                    <span class="text-gray-300">/ {{ o.total_teams }}</span>
+                </td>
+                <td class="px-4 py-2.5 text-right">
+                    {% if o.sim.win_pct >= 20 %}
+                    <span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">{{ o.sim.win_pct }}%</span>
+                    {% elif o.sim.win_pct >= 10 %}
+                    <span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700">{{ o.sim.win_pct }}%</span>
+                    {% else %}
+                    <span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-500">{{ o.sim.win_pct }}%</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-2.5 text-right text-sm font-medium text-gray-600">{{ o.sim.top3_pct }}%</td>
+                <td class="px-4 py-2.5 text-right text-sm">
+                    <span class="font-mono {% if o.sim.avg_finish <= 2.5 %}text-green-600{% elif o.sim.avg_finish <= 4 %}text-gray-600{% else %}text-red-400{% endif %}">
+                        {{ o.sim.avg_finish }}
+                    </span>
+                </td>
+                <td class="px-4 py-2.5 text-left text-xs text-gray-500">
+                    {% if o.best_team %}
+                    <span class="font-medium">({{ o.best_team.team.seed }}) {{ o.best_team.team.name }}</span>
+                    <span class="text-madness-blue font-semibold">${{ "%.2f"|format(o.best_team.projected) }}</span>
+                    {% else %}—{% endif %}
+                </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
-<!-- Charts row -->
+<!-- ===== CHARTS ROW ===== -->
 <div class="grid md:grid-cols-2 gap-6 mb-6">
-    <div class="bg-white rounded-lg shadow-sm p-6">
-        <h2 class="text-lg font-bold text-gray-900 mb-4">Projected vs Max Upside</h2>
+    <!-- Pool Win Probability -->
+    <div class="bg-white rounded-lg shadow-sm p-5">
+        <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">Chance of Winning Pool</h2>
         <div style="height: 280px;">
-            <canvas id="upsideChart"></canvas>
+            <canvas id="winPctChart"></canvas>
         </div>
     </div>
-    <div class="bg-white rounded-lg shadow-sm p-6">
-        <h2 class="text-lg font-bold text-gray-900 mb-4">Win Probability by Round</h2>
-        <p class="text-xs text-gray-400 mb-3">Average team win probability per owner per round</p>
+
+    <!-- Round Earnings Breakdown -->
+    <div class="bg-white rounded-lg shadow-sm p-5">
+        <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">Expected Earnings by Round</h2>
         <div style="height: 280px;">
-            <canvas id="roundChart"></canvas>
+            <canvas id="roundEarningsChart"></canvas>
         </div>
     </div>
 </div>
 
-<!-- Per-Owner Team Breakdown with Vegas Lines -->
+<!-- ===== ROOTING GUIDE ===== -->
+{% if data.rooting_guide %}
+<div class="bg-white rounded-lg shadow-sm overflow-hidden mb-6">
+    <div class="px-4 py-3 bg-gray-50 border-b">
+        <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider">Rooting Guide</h2>
+        <p class="text-xs text-gray-400">Upcoming games ranked by stakes — who needs what</p>
+    </div>
+    <div class="divide-y divide-gray-50">
+        {% for entry in data.rooting_guide[:15] %}
+        <div class="px-4 py-2.5 flex items-center gap-3 text-sm {% if entry.status == 'in_progress' %}bg-red-50{% endif %}">
+            <div class="flex-shrink-0 w-14 text-center">
+                {% if entry.status == 'in_progress' %}
+                <span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-600 animate-pulse">LIVE</span>
+                {% else %}
+                <span class="text-xs text-gray-400 font-medium">
+                    {% if entry.round_name == 'Round of 64' %}R64
+                    {% elif entry.round_name == 'Round of 32' %}R32
+                    {% elif entry.round_name == 'Sweet 16' %}S16
+                    {% elif entry.round_name == 'Elite 8' %}E8
+                    {% elif entry.round_name == 'Final Four' %}F4
+                    {% elif entry.round_name == 'Championship' %}CH
+                    {% else %}{{ entry.round_name }}{% endif %}
+                </span>
+                {% endif %}
+            </div>
+            <div class="flex-1 flex items-center gap-2">
+                <div class="flex-1 text-right">
+                    <span class="font-medium">({{ entry.team1_seed }}) {{ entry.team1_name }}</span>
+                    {% if entry.owner1 %}
+                    <span class="text-xs px-1.5 py-0.5 rounded ml-1" style="background: {{ owner_colors.get(entry.owner1, '#999') }}22; color: {{ owner_colors.get(entry.owner1, '#999') }};">{{ entry.owner1 }}</span>
+                    {% endif %}
+                </div>
+                <div class="flex-shrink-0 text-xs text-gray-300 font-bold">vs</div>
+                <div class="flex-1">
+                    <span class="font-medium">({{ entry.team2_seed }}) {{ entry.team2_name }}</span>
+                    {% if entry.owner2 %}
+                    <span class="text-xs px-1.5 py-0.5 rounded ml-1" style="background: {{ owner_colors.get(entry.owner2, '#999') }}22; color: {{ owner_colors.get(entry.owner2, '#999') }};">{{ entry.owner2 }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="flex-shrink-0 w-20 text-right">
+                <span class="text-xs font-mono text-gray-400">{{ '%d'|format((entry.team1_prob * 100)|round) }}-{{ '%d'|format((entry.team2_prob * 100)|round) }}</span>
+            </div>
+            <div class="flex-shrink-0 w-12 text-right">
+                <span class="font-bold text-madness-orange">${{ entry.prize }}</span>
+            </div>
+            {% if entry.head_to_head %}
+            <div class="flex-shrink-0">
+                <span class="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-bold">H2H</span>
+            </div>
+            {% elif entry.same_owner %}
+            <div class="flex-shrink-0">
+                <span class="text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-600 font-bold">LOCK</span>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- ===== MVP TEAMS + UPSETS ===== -->
+<div class="grid md:grid-cols-2 gap-6 mb-6">
+    <!-- MVP Teams -->
+    <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div class="px-4 py-3 bg-gray-50 border-b">
+            <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider">Most Valuable Teams</h2>
+            <p class="text-xs text-gray-400">Highest projected remaining value</p>
+        </div>
+        <div class="divide-y divide-gray-50">
+            {% for t in data.mvp_teams %}
+            <div class="px-4 py-2.5 flex items-center justify-between text-sm">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg font-bold text-gray-300">{{ loop.index }}</span>
+                    <div>
+                        <span class="font-bold">({{ t.team.seed }}) {{ t.team.name }}</span>
+                        <span class="text-xs px-1.5 py-0.5 rounded ml-1" style="background: {{ owner_colors.get(t._owner_name, '#999') }}22; color: {{ owner_colors.get(t._owner_name, '#999') }};">{{ t._owner_name }}</span>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <span class="font-bold text-madness-blue">${{ "%.2f"|format(t.projected) }}</span>
+                    {% if t.champ_pct %}
+                    <span class="text-xs text-gray-400 ml-1">({{ t.champ_pct }}% title)</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Biggest Upsets -->
+    {% if data.upsets %}
+    <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div class="px-4 py-3 bg-gray-50 border-b">
+            <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider">Biggest Upsets So Far</h2>
+            <p class="text-xs text-gray-400">Higher-seeded teams that pulled off surprises</p>
+        </div>
+        <div class="divide-y divide-gray-50">
+            {% for u in data.upsets %}
+            <div class="px-4 py-2.5 flex items-center justify-between text-sm">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">{% if loop.index == 1 %}&#128293;{% elif loop.index <= 3 %}&#128165;{% else %}&#9889;{% endif %}</span>
+                    <div>
+                        <span class="font-bold">({{ u.winner_seed }}) {{ u.winner }}</span>
+                        <span class="text-gray-400">beat</span>
+                        <span class="font-medium">({{ u.loser_seed }}) {{ u.loser }}</span>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <span class="text-xs px-1.5 py-0.5 rounded" style="background: {{ owner_colors.get(u.owner, '#999') }}22; color: {{ owner_colors.get(u.owner, '#999') }};">{{ u.owner }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ===== PER-OWNER TEAM BREAKDOWN ===== -->
 <div class="mb-6">
-    <h2 class="text-xl font-bold text-gray-900 mb-4">Team Projections</h2>
+    <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">Team Projections by Owner</h2>
+    <p class="text-xs text-gray-400 mb-4">
+        Game lines (yellow) &middot; Futures-calibrated (blue) &middot; Results (green) &middot; Seed average (gray)
+    </p>
     <div class="grid md:grid-cols-2 gap-4">
         {% for o in data.owners %}
         <div class="bg-white rounded-lg shadow-sm p-4">
             <div class="flex justify-between items-baseline mb-3">
-                <h3 class="font-bold text-gray-900">{{ o.owner.name }}</h3>
+                <div class="flex items-center gap-2">
+                    <h3 class="font-bold text-gray-900">{{ o.owner.name }}</h3>
+                    {% if o.sim.win_pct >= 10 %}
+                    <span class="text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-bold">{{ o.sim.win_pct }}% to win</span>
+                    {% endif %}
+                </div>
                 <div class="text-sm">
-                    <span class="text-green-600 font-semibold">${{ "%.2f"|format(o.actual_winnings) }} earned</span>
+                    <span class="text-green-600 font-semibold">${{ "%.2f"|format(o.actual_winnings) }}</span>
                     <span class="text-gray-300 mx-1">/</span>
                     <span class="text-madness-blue font-bold">${{ "%.2f"|format(o.projected_winnings) }} proj</span>
                 </div>
@@ -97,9 +252,9 @@
                                 {{ '%+.1f'|format(t.vegas_line) }}
                             </span>
                             {% endif %}
-                            {% if t.team.championship_odds is not none and not t.team.eliminated %}
+                            {% if t.champ_pct is not none and not t.team.eliminated %}
                             <span class="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-mono font-semibold">
-                                {{ '%+d'|format(t.team.championship_odds) }} title
+                                {{ t.champ_pct }}% title
                             </span>
                             {% endif %}
                         </div>
@@ -137,92 +292,71 @@
                 </div>
                 {% endfor %}
             </div>
-            <div class="text-xs text-gray-300 mt-2 flex gap-3">
-                <span><span class="text-yellow-600">Yellow %</span> = Game line</span>
-                <span><span class="text-blue-500">Blue %</span> = Futures</span>
-                <span><span class="text-green-600">Green %</span> = Result</span>
-                <span><span class="text-gray-400">Gray %</span> = Seed avg</span>
-            </div>
         </div>
         {% endfor %}
     </div>
 </div>
 
 <script>
-const owners = [{% for o in data.owners %}"{{ o.owner.name }}"{% if not loop.last %},{% endif %}{% endfor %}];
-const actual = [{% for o in data.owners %}{{ o.actual_winnings }}{% if not loop.last %},{% endif %}{% endfor %}];
-const projected = [{% for o in data.owners %}{{ o.projected_winnings }}{% if not loop.last %},{% endif %}{% endfor %}];
-const maxPossible = [{% for o in data.owners %}{{ o.max_possible }}{% if not loop.last %},{% endif %}{% endfor %}];
+const COLORS = {
+    {% for name, color in owner_colors.items() %}"{{ name }}": "{{ color }}",{% endfor %}
+};
 
-const COLORS = ['#ef4444','#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#84cc16'];
-
-// Upside chart
-const remainingProj = projected.map((p, i) => Math.max(0, p - actual[i]));
-const remainingMax = maxPossible.map((m, i) => Math.max(0, m - projected[i]));
-new Chart(document.getElementById('upsideChart'), {
+// Pool Win Probability - Horizontal bar
+const simData = [{% for o in data.owners %}{ name: "{{ o.owner.name }}", pct: {{ o.sim.win_pct }} },{% endfor %}];
+simData.sort((a, b) => b.pct - a.pct);
+new Chart(document.getElementById('winPctChart'), {
     type: 'bar',
     data: {
-        labels: owners,
-        datasets: [
-            { label: 'Earned', data: actual, backgroundColor: 'rgba(16, 185, 129, 0.7)', borderWidth: 0, borderRadius: 2 },
-            { label: 'Expected Remaining', data: remainingProj, backgroundColor: 'rgba(0, 61, 165, 0.5)', borderWidth: 0, borderRadius: 2 },
-            { label: 'Upside Above Expected', data: remainingMax, backgroundColor: 'rgba(255, 107, 0, 0.2)', borderWidth: 0, borderRadius: 2 },
-        ],
+        labels: simData.map(d => d.name),
+        datasets: [{
+            data: simData.map(d => d.pct),
+            backgroundColor: simData.map(d => COLORS[d.name] + 'cc'),
+            borderColor: simData.map(d => COLORS[d.name]),
+            borderWidth: 1,
+            borderRadius: 4,
+        }],
     },
     options: {
         indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
-            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: $${ctx.parsed.x.toFixed(2)}` } },
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => `${ctx.parsed.x}% chance` } },
         },
-        scales: { x: { stacked: true, beginAtZero: true, ticks: { callback: v => '$' + v } }, y: { stacked: true } },
+        scales: {
+            x: { beginAtZero: true, max: Math.max(50, Math.ceil(simData[0].pct / 10) * 10), ticks: { callback: v => v + '%' } },
+            y: { grid: { display: false } },
+        },
     },
 });
 
-// Round-by-round win probability chart
+// Round Earnings Breakdown - Stacked bar
 const roundLabels = ['R64', 'R32', 'S16', 'E8', 'F4', 'CH'];
-const roundDatasets = [];
-{% for o in data.owners %}
-{
-    // Average win probability across this owner's alive teams per round
-    const teamRounds = [
-        {% for t in o.teams %}
-        {% if not t.team.eliminated %}
-        [{% for rd in t.round_details %}{{ rd.win_prob }}{% if not loop.last %},{% endif %}{% endfor %}],
-        {% endif %}
-        {% endfor %}
-    ];
-    const avgProbs = roundLabels.map((_, ri) => {
-        if (teamRounds.length === 0) return 0;
-        const sum = teamRounds.reduce((s, tr) => s + (tr[ri] || 0), 0);
-        return sum / teamRounds.length;
-    });
-    roundDatasets.push({
-        label: "{{ o.owner.name }}",
-        data: avgProbs.map(p => (p * 100).toFixed(1)),
-        borderColor: COLORS[{{ loop.index0 }} % 8],
-        backgroundColor: COLORS[{{ loop.index0 }} % 8] + '22',
-        borderWidth: 2,
-        pointRadius: 3,
-        tension: 0.3,
-        fill: false,
-    });
-}
-{% endfor %}
-new Chart(document.getElementById('roundChart'), {
-    type: 'line',
-    data: { labels: roundLabels, datasets: roundDatasets },
+const roundColors = ['#94a3b8', '#60a5fa', '#34d399', '#fbbf24', '#f97316', '#ef4444'];
+const breakdownData = {{ data.round_breakdown | tojson }};
+const breakdownOwners = breakdownData.map(d => d.owner);
+const datasets = roundLabels.map((label, ri) => ({
+    label: label,
+    data: breakdownData.map(d => d.rounds[ri]),
+    backgroundColor: roundColors[ri],
+    borderWidth: 0,
+    borderRadius: ri === 5 ? 3 : 0,
+}));
+new Chart(document.getElementById('roundEarningsChart'), {
+    type: 'bar',
+    data: { labels: breakdownOwners, datasets },
     options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } },
-            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
+            legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
+            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y.toFixed(2)}` } },
         },
         scales: {
-            y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } },
+            x: { stacked: true, grid: { display: false } },
+            y: { stacked: true, beginAtZero: true, ticks: { callback: v => '$' + v } },
         },
     },
 });

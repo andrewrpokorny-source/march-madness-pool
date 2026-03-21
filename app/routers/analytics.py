@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.services.analytics import get_analytics
+from app.routers.bracket import OWNER_COLORS
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -17,4 +18,5 @@ async def analytics_view(request: Request, db: Session = Depends(get_db)):
         "request": request,
         "page_title": "Analytics",
         "data": data,
+        "owner_colors": OWNER_COLORS,
     })
