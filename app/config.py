@@ -13,7 +13,7 @@ ESPN_POLL_INTERVAL_MINUTES = int(os.getenv("ESPN_POLL_INTERVAL_MINUTES", "5"))
 
 # Prize payouts per round
 ROUND_PRIZES = {
-    "First Four": 1,
+    "First Four": 0,
     "Round of 64": 1,
     "Round of 32": 2,
     "Sweet 16": 5,
