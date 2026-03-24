@@ -215,47 +215,51 @@ def _simulate_pool(owner_analytics: list[dict], all_games: list[Game],
                    team_ev_cache: dict, n_sims: int = 10000) -> dict:
     """Run Monte Carlo simulation to estimate each owner's probability of winning the pool.
 
-    Returns dict mapping owner_name -> {win_pct, avg_finish, top3_pct, podium counts...}
-    """
-    # Build per-team round probabilities for simulation
-    # For each non-final game, we need the win probability
-    pending_games = []
-    for g in all_games:
-        if g.status == "final" or not g.team1_id or not g.team2_id:
-            continue
-        # Get team1 win probability
-        p1 = g.team1_win_prob
-        if p1 is None:
-            # Fallback to seed-based
-            s1 = g.team1.seed if g.team1 else 8
-            s2 = g.team2.seed if g.team2 else 8
-            p1 = 0.5 + (s2 - s1) * 0.02  # rough approximation
-            p1 = max(0.05, min(0.95, p1))
-        pending_games.append((g, p1))
+    For each simulation:
+    - Uses actual winnings as the base
+    - For each alive team, simulates each remaining round using that team's
+      per-round conditional win probabilities (from _compute_team_ev)
+    - Awards the round prize each time a team survives
+    - Ranks owners by total simulated winnings
 
-    # Build owner -> team_ids mapping
-    owner_team_ids = {}
+    Returns dict mapping owner_name -> {win_pct, top3_pct, avg_finish}
+    """
+    # Build per-team simulation data: owner_name, round_probs, first_pending_round
+    team_sim_data = []  # list of (owner_name, round_probs_for_remaining_rounds)
+
     for oa in owner_analytics:
         owner_name = oa["owner"].name
-        owner_team_ids[owner_name] = set()
+        seen_playin = set()
         for td in oa["teams"]:
-            owner_team_ids[owner_name].add(td["team"].id)
+            team = td["team"]
+            if team.eliminated:
+                continue
+            # Skip duplicate play-in teams (only simulate one per pair)
+            if team.playin_label:
+                if team.playin_label in seen_playin:
+                    continue
+                seen_playin.add(team.playin_label)
 
-    # Pre-compute actual winnings (already locked in)
+            ev_data = team_ev_cache.get(team.id)
+            if not ev_data:
+                continue
+
+            # Find which rounds are still pending (not "result")
+            remaining = []  # list of (round_index, conditional_win_prob, prize)
+            for i in range(6):
+                source = ev_data["round_sources"][i]
+                if source in ("result",):
+                    continue
+                if source == "eliminated":
+                    break
+                prob = ev_data["round_probs"][i]
+                remaining.append((i, prob, ROUND_PRIZE_LIST[i]))
+
+            if remaining:
+                team_sim_data.append((owner_name, remaining))
+
+    # Pre-compute actual winnings base
     owner_actual = {oa["owner"].name: oa["actual_winnings"] for oa in owner_analytics}
-
-    # For each team, compute remaining per-round EV contribution for simulation
-    # We need: for each pending game, what prize does the winner get?
-    game_prize = {}
-    for g, _ in pending_games:
-        prize = ROUND_PRIZES.get(g.round_name, 0)
-        game_prize[g.id] = prize
-
-    # Also need to account for future games that don't exist yet
-    # For simplicity, use the per-team projected - actual as the "remaining EV"
-    # and simulate only existing pending games, distributing remaining EV randomly
-
-    # Simple approach: for each sim, flip each pending game, sum prizes per owner
     owner_names = list(owner_actual.keys())
     win_counts = {n: 0 for n in owner_names}
     top3_counts = {n: 0 for n in owner_names}
@@ -264,17 +268,16 @@ def _simulate_pool(owner_analytics: list[dict], all_games: list[Game],
     for _ in range(n_sims):
         sim_totals = dict(owner_actual)
 
-        for game, p1 in pending_games:
-            prize = game_prize.get(game.id, 0)
-            if random.random() < p1:
-                winner_id = game.team1_id
-            else:
-                winner_id = game.team2_id
-
-            for owner_name, tids in owner_team_ids.items():
-                if winner_id in tids:
-                    sim_totals[owner_name] += prize
+        for owner_name, remaining_rounds in team_sim_data:
+            # Simulate this team through its remaining rounds
+            alive = True
+            for round_idx, win_prob, prize in remaining_rounds:
+                if not alive:
                     break
+                if random.random() < win_prob:
+                    sim_totals[owner_name] += prize
+                else:
+                    alive = False
 
         # Rank owners
         ranked = sorted(owner_names, key=lambda n: sim_totals[n], reverse=True)
